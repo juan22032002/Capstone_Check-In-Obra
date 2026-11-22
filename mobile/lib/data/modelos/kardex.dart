@@ -11,6 +11,7 @@ class MovimientoKardex {
     required this.usuarioNombre,
     required this.trabajadorNombre,
     required this.trabajadorRut,
+    this.costoUnitario,
   });
 
   final int id;
@@ -30,6 +31,10 @@ class MovimientoKardex {
   /// registra y el trabajador se lleva. Nulos en una recepción.
   final String? trabajadorNombre;
   final String? trabajadorRut;
+
+  /// Lo que se pagó por unidad. Solo lo trae una recepción, y solo si quien
+  /// la registró tenía la factura o la guía a mano.
+  final double? costoUnitario;
 
   String? get receptor => trabajadorNombre == null
       ? null
@@ -55,5 +60,6 @@ class MovimientoKardex {
         usuarioNombre: j['usuarioNombre'] as String,
         trabajadorNombre: j['trabajadorNombre'] as String?,
         trabajadorRut: j['trabajadorRut'] as String?,
+        costoUnitario: (j['costoUnitario'] as num?)?.toDouble(),
       );
 }

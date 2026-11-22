@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formato.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_forma.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/modelos/alerta.dart';
 import '../../data/modelos/kardex.dart';
@@ -10,7 +11,9 @@ import '../../shared_widgets/estados.dart';
 import '../../shared_widgets/panel.dart';
 import 'bodega_providers.dart';
 import 'pantalla_cierre_turno.dart';
+import 'pantalla_escaneo.dart';
 import 'pantalla_prestamo.dart';
+import 'pantalla_solicitudes.dart';
 
 /// Lo primero que ve el bodeguero: cómo va el turno y qué requiere atención.
 class PantallaInicioBodega extends ConsumerWidget {
@@ -30,52 +33,124 @@ class PantallaInicioBodega extends ConsumerWidget {
     return RefreshIndicator(
       onRefresh: () async => recargarBodega(ref),
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: AppEspacio.pantalla,
         children: [
+          // El turno es el único marco oscuro de la app dentro de un shell: es
+          // lo primero que se mira al tomar el teléfono, y el contraste lo
+          // separa de todo lo que viene debajo, que es para actuar.
           Panel(
             padding: EdgeInsets.zero,
+            color: AppColors.surfaceDark,
+            borderColor: AppColors.surfaceDark,
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                  child: Row(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppEspacio.md,
+                    AppEspacio.md,
+                    AppEspacio.md,
+                    AppEspacio.lg - 4,
+                  ),
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: Contador(
-                          valor: '${movimientosHoy.valueOrNull?.length ?? 0}',
-                          rotulo: 'Movimientos\ndel turno',
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Turno de hoy',
+                          style: AppTexto.rotulo.copyWith(
+                            color: AppColors.textOnDark,
+                          ),
                         ),
                       ),
-                      Expanded(
-                        child: Contador(
-                          valor: '${prestamos.valueOrNull?.length ?? 0}',
-                          rotulo: 'Herramientas\nprestadas',
-                        ),
-                      ),
-                      Expanded(
-                        child: Contador(
-                          valor: '${alertas.valueOrNull?.length ?? 0}',
-                          rotulo: 'Alertas\nsin resolver',
-                          color: (alertas.valueOrNull?.isEmpty ?? true)
-                              ? AppColors.primary
-                              : AppColors.destructiveDark,
-                        ),
+                      const SizedBox(height: AppEspacio.md),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Contador(
+                              valor:
+                                  '${movimientosHoy.valueOrNull?.length ?? 0}',
+                              rotulo: 'Movimientos\ndel turno',
+                              color: Colors.white,
+                              sobreOscuro: true,
+                            ),
+                          ),
+                          Expanded(
+                            child: Contador(
+                              valor: '${prestamos.valueOrNull?.length ?? 0}',
+                              rotulo: 'Herramientas\nprestadas',
+                              color: Colors.white,
+                              sobreOscuro: true,
+                            ),
+                          ),
+                          Expanded(
+                            child: Contador(
+                              valor: '${alertas.valueOrNull?.length ?? 0}',
+                              rotulo: 'Alertas\nsin resolver',
+                              color: (alertas.valueOrNull?.isEmpty ?? true)
+                                  ? Colors.white
+                                  : AppColors.destructiveOnDark,
+                              sobreOscuro: true,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.border),
+                const Divider(height: 1, color: AppColors.borderOnDark),
                 _BotonCierre(),
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppEspacio.md),
+          const _Solicitudes(),
+          const SizedBox(height: AppEspacio.lg),
+          const Etiqueta('Escanear'),
+          const SizedBox(height: AppEspacio.sm + 4),
+          // El escaneo va arriba de "Registrar" porque es por donde empieza el
+          // trabajo del mesón: primero se identifica a quien viene a buscar
+          // algo, o lo que trae en la mano, y recién después se elige qué
+          // movimiento anotar.
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _AccesoRapido(
+                    icono: Icons.qr_code_scanner,
+                    titulo: 'Credencial o pedido',
+                    detalle: 'Aprobar lo que pidió o entregar su pedido QR',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const PantallaEscaneoCredencial(),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppEspacio.sm + 4),
+                Expanded(
+                  child: _AccesoRapido(
+                    icono: Icons.barcode_reader,
+                    titulo: 'Código de barras',
+                    detalle: 'Encontrar un material o una herramienta',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const PantallaEscaneoCodigo(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppEspacio.lg),
           const Etiqueta('Capital en la obra'),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppEspacio.sm + 4),
           const _ValorEnObra(),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppEspacio.lg),
           const Etiqueta('Registrar'),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppEspacio.sm + 4),
           // Las dos tarjetas del mismo alto. `stretch` solo no basta dentro de
           // un ListView: la altura que entra no está acotada, así que no hay
           // contra qué estirarse. `IntrinsicHeight` mide primero la más alta y
@@ -92,7 +167,7 @@ class PantallaInicioBodega extends ConsumerWidget {
                     onTap: () => alIrA(1),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: AppEspacio.sm + 4),
                 Expanded(
                   child: _AccesoRapido(
                     icono: Icons.handyman_outlined,
@@ -108,7 +183,7 @@ class PantallaInicioBodega extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppEspacio.lg),
           Row(
             children: [
               const Expanded(child: Etiqueta('Alertas sin resolver')),
@@ -151,14 +226,14 @@ class PantallaInicioBodega extends ConsumerWidget {
               children: [
                 for (final alerta in lista.take(3)) ...[
                   _FilaAlertaResumen(alerta: alerta),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppEspacio.sm),
                 ],
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppEspacio.lg),
           const Etiqueta('Últimos movimientos'),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppEspacio.sm + 4),
           Contenido<List<MovimientoKardex>>(
             valor: ref.watch(movimientosProvider),
             alReintentar: () => ref.invalidate(movimientosProvider),
@@ -182,6 +257,109 @@ class PantallaInicioBodega extends ConsumerWidget {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// La cola de solicitudes de la obra.
+///
+/// Va arriba de todo lo demás porque es gente esperando: el resto de la
+/// pantalla son cifras que se pueden mirar en cualquier momento, esto no.
+class _Solicitudes extends ConsumerWidget {
+  const _Solicitudes();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final estado = ref.watch(solicitudesPendientesProvider);
+    final pendientes = estado.valueOrNull;
+    final fallo = estado.hasError;
+    final hayGenteEsperando = (pendientes ?? 0) > 0;
+
+    // Si la consulta falló, el panel no puede quedarse diciendo "cargando":
+    // tocarlo reintenta en vez de llevar a una lista que tampoco va a cargar.
+    void reintentar() {
+      ref.invalidate(solicitudesMaterialProvider);
+      ref.invalidate(solicitudesHerramientaProvider);
+    }
+
+    final (fondo, borde, colorTexto) = switch ((fallo, hayGenteEsperando)) {
+      (true, _) => (
+        AppColors.destructiveTint,
+        AppColors.destructive,
+        AppColors.destructiveDark,
+      ),
+      (_, true) => (
+        AppColors.warningTint,
+        AppColors.warning,
+        AppColors.warningDark,
+      ),
+      _ => (AppColors.card, AppColors.borderControl, AppColors.secondary),
+    };
+
+    return PanelTocable(
+      semanticLabel: switch ((fallo, pendientes)) {
+        (true, _) =>
+          'No se pudieron cargar las solicitudes. Tocar para reintentar',
+        (_, null) => 'Solicitudes pendientes, cargando',
+        (_, 0) => 'Solicitudes: ninguna pendiente. Tocar para ver la cola',
+        (_, 1) => '1 solicitud pendiente. Tocar para resolverla',
+        (_, final n) => '$n solicitudes pendientes. Tocar para resolverlas',
+      },
+      borderColor: borde,
+      color: fondo,
+      onTap: fallo
+          ? reintentar
+          : () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const PantallaSolicitudesObra(),
+              ),
+            ),
+      child: Row(
+        children: [
+          // Mismo cuadro que el resto de las filas. Sobre el panel tintado
+          // (gente esperando, o error) el cuadro va en blanco: el hundido se
+          // perdía contra el tinte.
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: fallo || hayGenteEsperando
+                  ? AppColors.card
+                  : AppColors.sunken,
+              borderRadius: AppForma.borde,
+            ),
+            child: Icon(
+              fallo ? Icons.error_outline : Icons.inbox_outlined,
+              size: 21,
+              color: fallo || hayGenteEsperando
+                  ? colorTexto
+                  : AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: AppEspacio.sm + 4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Solicitudes', style: AppTexto.subtitulo),
+                const SizedBox(height: 2),
+                Text(switch ((fallo, pendientes)) {
+                  (true, _) => 'No se pudieron cargar. Toca para reintentar.',
+                  (_, null) => 'Cargando…',
+                  (_, 0) => 'Nadie está esperando material ni herramientas',
+                  (_, 1) => '1 trabajador espera respuesta',
+                  (_, final n) => '$n solicitudes esperan respuesta',
+                }, style: AppTexto.cuerpoChico.copyWith(color: colorTexto)),
+              ],
+            ),
+          ),
+          Icon(
+            fallo ? Icons.refresh : Icons.chevron_right,
+            size: 22,
+            color: AppColors.secondary,
           ),
         ],
       ),
@@ -258,41 +436,36 @@ class _FilaValor extends StatelessWidget {
       label: '$titulo: ${Formato.pesos(monto)}. $detalle',
       excludeSemantics: true,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        padding: const EdgeInsets.all(AppEspacio.md),
         child: Row(
           children: [
-            Icon(icono, size: 20, color: AppColors.secondary),
-            const SizedBox(width: 12),
+            _IconoEnCuadro(icono),
+            const SizedBox(width: AppEspacio.sm + 4),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     titulo,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
+                    style: AppTexto.subtitulo.copyWith(fontSize: 14.5),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     detalle,
-                    style: const TextStyle(
-                      fontSize: 11.5,
+                    style: AppTexto.cuerpoChico.copyWith(
+                      fontSize: 12.5,
                       color: AppColors.secondary,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppEspacio.sm + 4),
             Text(
               Formato.pesos(monto),
-              style: TextStyle(
-                fontFamily: AppTheme.monoFamily,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+              style: AppTexto.subtitulo.copyWith(
+                fontSize: 17,
+                letterSpacing: -0.3,
                 color: alerta ? AppColors.warningDark : AppColors.primary,
               ),
             ),
@@ -312,7 +485,10 @@ class _BotonCierre extends ConsumerWidget {
       semanticLabel: 'Cerrar el turno de bodega',
       borderColor: Colors.transparent,
       color: Colors.transparent,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppEspacio.md,
+        vertical: AppEspacio.sm + 6,
+      ),
       onTap: () => Navigator.of(context)
           .push(MaterialPageRoute(builder: (_) => const PantallaCierreTurno())),
       child: Row(
@@ -320,19 +496,18 @@ class _BotonCierre extends ConsumerWidget {
           const Icon(
             Icons.nightlight_outlined,
             size: 20,
-            color: AppColors.secondary,
+            color: AppColors.textOnDark,
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: AppEspacio.sm + 4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Cerrar turno',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
+                  style: AppTexto.subtitulo.copyWith(
+                    fontSize: 14.5,
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -340,11 +515,10 @@ class _BotonCierre extends ConsumerWidget {
                   fuera == 0
                       ? 'No hay herramientas fuera de bodega'
                       : '$fuera ${fuera == 1 ? 'herramienta sigue' : 'herramientas siguen'} fuera',
-                  style: TextStyle(
-                    fontSize: 12,
+                  style: AppTexto.cuerpoChico.copyWith(
                     color: fuera == 0
-                        ? AppColors.secondary
-                        : AppColors.warningDark,
+                        ? AppColors.textOnDarkMuted
+                        : AppColors.warningOnDark,
                   ),
                 ),
               ],
@@ -352,8 +526,8 @@ class _BotonCierre extends ConsumerWidget {
           ),
           const Icon(
             Icons.chevron_right,
-            size: 20,
-            color: AppColors.accentFill,
+            size: 22,
+            color: AppColors.accentOnDark,
           ),
         ],
       ),
@@ -382,22 +556,17 @@ class _AccesoRapido extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icono, size: 24, color: AppColors.accentFill),
-          const SizedBox(height: 12),
-          Text(
-            titulo,
-            style: const TextStyle(
-              fontSize: 14.5,
-              fontWeight: FontWeight.w600,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 3),
+          // Ícono en cuadro hundido y en tinta, no en naranjo: son cuatro
+          // accesos iguales y el acento, repetido cuatro veces, dejaría de
+          // señalar nada.
+          _IconoEnCuadro(icono),
+          const SizedBox(height: AppEspacio.sm + 6),
+          Text(titulo, style: AppTexto.subtitulo.copyWith(fontSize: 15)),
+          const SizedBox(height: 2),
           Text(
             detalle,
-            style: const TextStyle(
-              fontSize: 11.5,
-              height: 1.3,
+            style: AppTexto.cuerpoChico.copyWith(
+              fontSize: 12.5,
               color: AppColors.secondary,
             ),
           ),
@@ -430,7 +599,7 @@ class _FilaAlertaResumen extends StatelessWidget {
               Text(
                 Formato.antiguedad(alerta.fecha),
                 style: const TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   color: AppColors.secondary,
                 ),
               ),
@@ -460,7 +629,10 @@ class _FilaMovimiento extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppEspacio.md,
+        vertical: AppEspacio.sm + 5,
+      ),
       decoration: BoxDecoration(
         border: ultima
             ? null
@@ -479,7 +651,7 @@ class _FilaMovimiento extends StatelessWidget {
                     Text(
                       Formato.relativa(movimiento.fecha),
                       style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 12,
                         color: AppColors.secondary,
                       ),
                     ),
@@ -488,9 +660,9 @@ class _FilaMovimiento extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   movimiento.materialNombre,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    color: AppColors.primary,
+                  style: AppTexto.cuerpo.copyWith(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 if (movimiento.receptor case final quien?) ...[
@@ -498,7 +670,7 @@ class _FilaMovimiento extends StatelessWidget {
                   Text(
                     'a $quien',
                     style: const TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 12.5,
                       color: AppColors.secondary,
                     ),
                   ),
@@ -510,9 +682,10 @@ class _FilaMovimiento extends StatelessWidget {
           Text(
             Formato.cantidadConSigno(movimiento.cantidadConSigno),
             style: TextStyle(
-              fontFamily: AppTheme.monoFamily,
-              fontSize: 14,
+              fontFeatures: AppTexto.tabulares,
+              fontSize: 15,
               fontWeight: FontWeight.w600,
+              letterSpacing: -0.2,
               color: movimiento.entra
                   ? AppColors.successDark
                   : AppColors.primary,
@@ -535,4 +708,27 @@ class _ChipTipo extends StatelessWidget {
     'DESPACHO' => ChipEstado.neutro('Despacho'),
     _ => ChipEstado.aviso('Consumo', conPunto: false),
   };
+}
+
+/// Ícono sobre un cuadro hundido. Le da a cada fila y a cada acceso un punto
+/// de anclaje del mismo tamaño, sin gastar el acento en decoración.
+class _IconoEnCuadro extends StatelessWidget {
+  const _IconoEnCuadro(this.icono);
+
+  final IconData icono;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: const BoxDecoration(
+          color: AppColors.sunken,
+          borderRadius: AppForma.borde,
+        ),
+        child: Icon(icono, size: 21, color: AppColors.primary),
+      ),
+    );
+  }
 }

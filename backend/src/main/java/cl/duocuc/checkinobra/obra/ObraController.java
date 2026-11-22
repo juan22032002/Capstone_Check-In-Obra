@@ -1,5 +1,8 @@
 package cl.duocuc.checkinobra.obra;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import cl.duocuc.checkinobra.config.SesionActual;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
@@ -30,7 +33,7 @@ public class ObraController {
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     @ResponseStatus(HttpStatus.CREATED)
-    public ObraResponse crear(@RequestBody CrearObraRequest req) {
+    public ObraResponse crear(@Valid @RequestBody CrearObraRequest req) {
         // La empresa sale del token, no de la petición. Mientras el cliente
         // pudiera nombrarla, pedir los datos de otra constructora era cuestión
         // de cambiar un número en la URL.
@@ -51,7 +54,7 @@ public class ObraController {
     /** Asignar o cambiar el jefe a cargo. */
     @PutMapping("/{id}/jefe-terreno")
     @PreAuthorize("hasRole('ADMIN')")
-    public ObraResponse asignarJefe(@PathVariable Long id, @RequestBody AsignarJefeRequest req) {
+    public ObraResponse asignarJefe(@PathVariable Long id, @Valid @RequestBody AsignarJefeRequest req) {
         return ObraResponse.de(obraService.asignarJefeDeTerreno(id, req.jefeTerrenoId()));
     }
 
@@ -61,7 +64,11 @@ public class ObraController {
         return ObraResponse.de(obraService.cerrarObra(id));
     }
 
-    public record CrearObraRequest(String nombre, String cliente, String ubicacion, Long jefeTerrenoId) {
+    public record CrearObraRequest(
+            @NotBlank(message = "El nombre es obligatorio") @Size(max = 200, message = "El nombre admite hasta 200 caracteres") String nombre,
+            @NotBlank(message = "El cliente es obligatorio") @Size(max = 200, message = "El cliente admite hasta 200 caracteres") String cliente,
+            @NotBlank(message = "La ubicación es obligatoria") @Size(max = 300, message = "La ubicación admite hasta 300 caracteres") String ubicacion,
+            Long jefeTerrenoId) {
     }
 
     public record AsignarJefeRequest(Long jefeTerrenoId) {

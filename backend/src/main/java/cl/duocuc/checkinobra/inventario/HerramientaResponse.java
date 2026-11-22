@@ -14,7 +14,7 @@ public record HerramientaResponse(
         String categoria,
         String estado,
         double valorReposicion,
-        Long empresaId) {
+        Long empresaId) implements HerramientaVista {
 
     public static HerramientaResponse de(Herramienta h) {
         return new HerramientaResponse(

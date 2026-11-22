@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../data/modelos/material.dart';
 import '../../shared_widgets/campo_texto.dart';
 import '../../shared_widgets/estados.dart';
+import '../../shared_widgets/opcion.dart';
 import '../../shared_widgets/panel.dart';
 import 'bodega_providers.dart';
 import 'pantalla_material.dart';
@@ -163,36 +164,7 @@ class _Pestana extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final texto = cantidad == null ? rotulo : '$rotulo · $cantidad';
-    return Semantics(
-      button: true,
-      selected: activa,
-      label: texto,
-      excludeSemantics: true,
-      child: Material(
-        color: activa ? AppColors.primary : AppColors.card,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              border: Border.fromBorderSide(
-                BorderSide(
-                  color: activa ? AppColors.primary : AppColors.borderControl,
-                ),
-              ),
-            ),
-            child: Text(
-              texto,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: activa ? Colors.white : AppColors.textMuted,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    return Opcion(texto: texto, elegida: activa, alTocar: onTap);
   }
 }
 
@@ -218,7 +190,14 @@ class FilaMaterial extends StatelessWidget {
               : item.bajo
               ? ', stock bajo'
               : ''}',
-      borderColor: item.critico ? AppColors.destructive : AppColors.border,
+      // Franja y no borde completo: tres tarjetas rojas seguidas gritan, y el
+      // chip "Crítico" ya dice lo mismo en palabras.
+      borderColor: AppColors.border,
+      borderIzquierdo: item.critico
+          ? AppColors.destructive
+          : item.bajo
+          ? AppColors.warning
+          : null,
       onTap:
           onTap ??
           () => Navigator.of(context).push(
@@ -258,7 +237,7 @@ class FilaMaterial extends StatelessWidget {
                   '${m.sku} · mín. ${Formato.cantidad(m.stockMinimo)} $unidad',
                   style: const TextStyle(
                     fontFamily: AppTheme.monoFamily,
-                    fontSize: 11.5,
+                    fontSize: 12.5,
                     color: AppColors.secondary,
                   ),
                 ),
@@ -272,6 +251,7 @@ class FilaMaterial extends StatelessWidget {
               Text(
                 Formato.cantidad(item.stock),
                 style: TextStyle(
+                  fontFeatures: AppTexto.tabulares,
                   fontFamily: AppTheme.monoFamily,
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -283,7 +263,7 @@ class FilaMaterial extends StatelessWidget {
               Text(
                 unidad,
                 style: const TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   color: AppColors.secondary,
                 ),
               ),
@@ -306,3 +286,17 @@ String _unidadDe(String categoria) => switch (categoria) {
 
 /// Expuesta para las demás pantallas de bodega.
 String unidadDe(String categoria) => _unidadDe(categoria);
+
+/// Nombre legible de la categoría del catálogo. El backend guarda el valor del
+/// enum en mayúsculas; mostrarlo tal cual ("FIJACION", sin tilde) se leía
+/// como un código y no como una palabra.
+String nombreDeCategoria(String categoria) => switch (categoria) {
+  'METALCOM' => 'Metalcom',
+  'VOLCANITA' => 'Volcanita',
+  'OSB' => 'OSB',
+  'FIJACION' => 'Fijación',
+  _ =>
+    categoria.isEmpty
+        ? categoria
+        : categoria[0] + categoria.substring(1).toLowerCase(),
+};

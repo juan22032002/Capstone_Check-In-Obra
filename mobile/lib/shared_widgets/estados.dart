@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/network/errores.dart';
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_forma.dart';
+import '../core/theme/app_theme.dart';
+import '../core/theme/movimiento.dart';
 import 'panel.dart';
 
 /// Dibuja un `AsyncValue` con los tres estados resueltos de una vez.
@@ -29,24 +32,52 @@ class Contenido<T> extends StatelessWidget {
   final Widget? vacio;
   final bool Function(T dato)? estaVacio;
 
+  /// Refrescar no es cargar. Tras aprobar o despachar se invalidan los
+  /// providers, y Riverpod deja un `AsyncLoading` que **conserva** el dato
+  /// anterior; antes eso caía en el spinner, así que la cola entera
+  /// desaparecía, volvía y perdía el scroll en cada aprobación. Ahora el dato
+  /// anterior sigue a la vista hasta que llega el nuevo. Solo la primera carga
+  /// —o un cambio de obra, que es otro dato— muestra el spinner.
   @override
   Widget build(BuildContext context) {
-    return switch (valor) {
-      AsyncError(:final error) => MensajeError(
+    final Widget cuerpo = valor.when(
+      skipLoadingOnRefresh: true,
+      skipLoadingOnReload: false,
+      error: (error, _) => MensajeError(
+        key: const ValueKey('error'),
         mensaje: mensajeDeError(error),
         alReintentar: alReintentar,
       ),
-      AsyncData(:final value) =>
-        (estaVacio?.call(value) ?? false) && vacio != null
+      data: (value) => KeyedSubtree(
+        key: const ValueKey('dato'),
+        child: (estaVacio?.call(value) ?? false) && vacio != null
             ? vacio!
             : constructor(value),
-      _ => const Padding(
+      ),
+      loading: () => const Padding(
+        key: ValueKey('cargando'),
         padding: EdgeInsets.symmetric(vertical: 48),
         child: Center(
           child: CircularProgressIndicator(color: AppColors.accentFill),
         ),
       ),
-    };
+    );
+
+    // De cargando a dato se funde en vez de saltar. Entre dos datos no hay
+    // transición: la clave es la misma y el contenido se actualiza en su lugar.
+    return AnimatedSwitcher(
+      duration: Movimiento.de(context, Movimiento.estado),
+      switchInCurve: Movimiento.salida,
+      switchOutCurve: Movimiento.salida,
+      // `passthrough`: el Stack no afloja las restricciones. Dentro de una
+      // lista, un Stack común dejaría a cada panel del ancho de su texto.
+      layoutBuilder: (actual, anteriores) => Stack(
+        fit: StackFit.passthrough,
+        alignment: Alignment.topCenter,
+        children: [...anteriores, ?actual],
+      ),
+      child: cuerpo,
+    );
   }
 }
 
@@ -76,13 +107,12 @@ class MensajeError extends StatelessWidget {
                     color: AppColors.destructiveDark,
                   ),
                 ),
-                const SizedBox(width: 11),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     mensaje,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.4,
+                    style: AppTexto.cuerpoChico.copyWith(
+                      fontSize: 14,
                       color: AppColors.destructiveDark,
                     ),
                   ),
@@ -128,34 +158,44 @@ class Vacio extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // El ícono va dentro de un cuadro hundido: sin él, un ícono de 40 px
+    // suelto sobre el lienzo parece un error de carga y no un estado.
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 8),
+      padding: const EdgeInsets.symmetric(
+        vertical: AppEspacio.xl + 8,
+        horizontal: AppEspacio.lg,
+      ),
       child: Column(
         children: [
           ExcludeSemantics(
-            child: Icon(icono, size: 40, color: AppColors.textFaint),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            titulo,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppColors.primary,
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: const BoxDecoration(
+                color: AppColors.sunken,
+                borderRadius: AppForma.borde,
+              ),
+              child: Icon(icono, size: 26, color: AppColors.secondary),
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            detalle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.4,
-              color: AppColors.secondary,
+          const SizedBox(height: AppEspacio.md),
+          Text(titulo, textAlign: TextAlign.center, style: AppTexto.subtitulo),
+          const SizedBox(height: AppEspacio.xs + 2),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Text(
+              detalle,
+              textAlign: TextAlign.center,
+              style: AppTexto.cuerpoChico.copyWith(
+                fontSize: 14,
+                color: AppColors.secondary,
+              ),
             ),
           ),
-          if (accion != null) ...[const SizedBox(height: 18), accion!],
+          if (accion != null) ...[
+            const SizedBox(height: AppEspacio.lg),
+            accion!,
+          ],
         ],
       ),
     );
@@ -174,11 +214,15 @@ class Contador extends StatelessWidget {
     required this.valor,
     required this.rotulo,
     this.color = AppColors.primary,
+    this.sobreOscuro = false,
   });
 
   final String valor;
   final String rotulo;
   final Color color;
+
+  /// Va sobre el marco oscuro del turno: el rótulo cambia a su gris claro.
+  final bool sobreOscuro;
 
   @override
   Widget build(BuildContext context) {
@@ -188,24 +232,24 @@ class Contador extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Cifras tabulares: al pasar de 9 a 10 el contador no empuja a sus
+          // vecinos.
           Text(
             valor,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w600,
-              height: 1.1,
-              color: color,
-            ),
+            style: AppTexto.cifra.copyWith(color: color),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppEspacio.xs + 2),
           Text(
             rotulo,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 11.5,
-              height: 1.25,
-              color: AppColors.secondary,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.3,
+              letterSpacing: -0.1,
+              color: sobreOscuro
+                  ? AppColors.textOnDarkMuted
+                  : AppColors.secondary,
             ),
           ),
         ],

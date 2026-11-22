@@ -40,6 +40,7 @@ mientras la obra todavía está abierta.
 | Flyway | — | Migraciones versionadas del esquema |
 | JJWT | 0.12.6 | Emisión y validación de JWT |
 | springdoc-openapi | 2.8.6 | Swagger UI / OpenAPI 3 |
+| Apache POI | 5.4.1 | Leer y generar las planillas `.xlsx` de la importación masiva |
 | Lombok | — | Reduce boilerplate en entidades |
 | Maven Wrapper | — | Build sin instalar Maven |
 
@@ -47,11 +48,12 @@ mientras la obra todavía está abierta.
 | Componente | Versión | Para qué |
 |---|---|---|
 | Flutter | 3.47.1 (stable) | Framework, solo Android |
-| `mobile_scanner` | ^7.4.0 | Escaneo de QR (material, herramienta, credencial) |
+| `mobile_scanner` | ^7.4.0 | Escáner de cámara: credencial QR del trabajador y código de barras de material y herramientas |
 | `dio` | ^5.11.0 | Cliente HTTP contra la API |
 | `flutter_riverpod` | ^2.6.1 | Manejo de estado |
 | `drift` | ^2.34.3 | Base local (cola de movimientos sin conexión) |
 | `flutter_secure_storage` | ^11.0.0 | Guardar el JWT y el PIN de forma segura |
+| `file_picker` | ^12.2.0 | Elegir y guardar la planilla `.xlsx` de la importación masiva |
 | `fl_chart` | ^1.2.0 | Gráficos de desviación y consumo |
 | `intl` | ^0.20.3 | Formato de fechas y montos en es-CL |
 
@@ -146,7 +148,7 @@ checkinobra/
 │   ├── design-system/               Paleta, tipografía, reglas UX
 │   └── mockups/                     3 lienzos de pantallas (.dc.html)
 │
-├── scripts/                         Utilidades en Python (fuera de producción)
+├── scripts/                         Utilidades del repo (emulador, skills)
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -268,9 +270,25 @@ cd Capstone_Check-In-Obra
 
 ### 1. Backend + base de datos
 
+Antes del primer arranque, crea el `.env` de la raíz con secretos propios: el de
+los JWT y las contraseñas de la base (la API no arranca sin ellos;
+`scripts/levantar.sh` los genera solos):
+
+```bash
+cp .env.example .env
+# reemplaza cada CAMBIAR_...: openssl rand -base64 36 | tr -d '+/=\n'
+```
+
 ```bash
 docker compose up -d
 ```
+
+> **Volumen de una versión anterior.** Los roles de la base (ver
+> [Roles de la base](#roles-de-la-base)) los crea el entrypoint de Postgres, pero
+> solo al inicializar un volumen nuevo. Con uno que ya existía, corre una vez
+> `docker compose up -d --wait db && docker compose exec -T db /docker-entrypoint-initdb.d/01-roles.sh`
+> antes de `docker compose up -d` (`scripts/levantar.sh` lo hace solo). Es
+> idempotente y le pasa las tablas existentes al migrador, sin perder datos.
 
 La primera vez tarda varios minutos: compila la imagen y descarga PostgreSQL.
 Flyway crea el esquema completo y carga el usuario semilla automáticamente.
@@ -293,19 +311,21 @@ Y abrir Swagger UI en **http://localhost:8081/swagger-ui.html**
 
 ### 2. Primer login
 
-La migración `V2` deja un administrador para poder entrar la primera vez:
-
-| Campo | Valor |
-|---|---|
-| Correo | `admin@arauco-ltda.cl` |
-| PIN | `0000` |
+En una base vacía, al arrancar, la API crea la primera empresa (por defecto
+Constructora Arauco Ltda., `PRIMERA_EMPRESA_RUT` y `PRIMERA_EMPRESA_NOMBRE`) y su
+administrador, `admin@arauco-ltda.cl` (`PRIMER_ADMIN_EMAIL`). **No hay credencial
+publicada**: la migración `V2` que sembraba el PIN `0000` salió de `db/migration`, y
+en las bases que ya la habían aplicado la `V11` lo anuló. Su clave inicial es la de
+`PRIMER_ADMIN_CLAVE` en el `.env` de la raíz (`scripts/levantar.sh` genera una; a
+mano, define la tuya de 8 o más caracteres antes de arrancar). La API la aplica al
+arrancar, solo si la cuenta aún no tiene credencial.
 
 **Ubuntu**
 
 ```bash
 curl -X POST http://localhost:8081/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@arauco-ltda.cl","pin":"0000"}'
+  -d "{\"email\":\"admin@arauco-ltda.cl\",\"pin\":\"$PRIMER_ADMIN_CLAVE\"}"
 ```
 
 **Windows (PowerShell)** — las comillas simples no sirven para el JSON, hay que
@@ -314,14 +334,63 @@ escapar las dobles:
 ```powershell
 curl.exe -X POST http://localhost:8081/api/auth/login `
   -H "Content-Type: application/json" `
-  -d '{\"email\":\"admin@arauco-ltda.cl\",\"pin\":\"0000\"}'
+  -d "{\`"email\`":\`"admin@arauco-ltda.cl\`",\`"pin\`":\`"$env:PRIMER_ADMIN_CLAVE\`"}"
 ```
 
-Devuelve un JWT que se manda en las llamadas siguientes como
-`Authorization: Bearer <token>`.
+Devuelve un JWT y `debeCambiarClave: true`. **Con esa clave el administrador solo
+puede cambiarla**: cualquier otra llamada responde `403` con
+`codigo: DEBE_CAMBIAR_PIN`. Se cambia con `PUT /api/auth/pin`
+(`{"pinActual": "...", "pinNuevo": "..."}`, 8 a 72 caracteres), que devuelve una
+sesión nueva ya sin la obligación:
 
-> ⚠️ Ese PIN es solo para arrancar en local. Antes de cualquier despliegue real
-> hay que cambiarlo con `PUT /api/usuarios/{id}/pin`.
+```bash
+curl -X PUT http://localhost:8081/api/auth/pin \
+  -H "Authorization: Bearer <token>" -H 'Content-Type: application/json' \
+  -d '{"pinActual":"<la inicial>","pinNuevo":"<la tuya, 8 o más caracteres>"}'
+```
+
+El token se manda en las llamadas siguientes como `Authorization: Bearer <token>`.
+
+> Por qué no hay un PIN fijo: con uno publicado, cualquiera que leyera este README
+> podía entrar como administrador, cambiarlo y quedarse con la cuenta. La `V11`
+> además marca a **todo usuario existente que no sea trabajador** para cambiar su
+> clave en el próximo ingreso: el hash no revela el largo, y no se puede saber
+> cuáles tienen todavía un PIN de 4 dígitos.
+
+### Cuentas de prueba (los cuatro roles)
+
+La base solo trae al administrador. Las demás cuentas las crea un script que usa
+la API como admin:
+
+```bash
+python3 scripts/cuentas_de_prueba.py            # Windows: py scripts\cuentas_de_prueba.py
+```
+
+Se puede correr las veces que haga falta. Si la cuenta ya existe (la busca por
+correo) no la duplica, solo le fija el PIN de la tabla. En una base vacía crea
+además la obra **Los Almendros · Torre B** con una cuadrilla, y deja a los dos
+trabajadores en ella: un trabajador sin cuadrilla no aparece en ninguna obra y el
+bodeguero no puede despacharle nada.
+
+| Rol | Correo | PIN | Qué ve hoy en la app |
+|---|---|---|---|
+| Administrador | `admin@arauco-ltda.cl` | `PRIMER_ADMIN_CLAVE` del `.env` (la cambia en su primer ingreso) | Obras, materiales, usuarios, empresa y la vista de bodega |
+| Jefe de terreno | `rodrigo.carcamo@arauco-ltda.cl` | `jefe-1111-obra` | Pantalla de rol pendiente (su flujo no está construido) |
+| Bodeguero | `jorge.reyes@arauco-ltda.cl` | `bodega-2222-obra` | Inicio, bodega, herramientas y alertas de la obra que elija |
+| Trabajador | `marcelo.sepulveda@arauco-ltda.cl` | `3333` | Pantalla de rol pendiente (su flujo no está construido) |
+| Trabajador | `javier.ortiz@arauco-ltda.cl` | `4444` | Idem |
+
+Los correos y PINs salen de `CUENTAS` en el script: si cambias uno allá, cámbialo
+acá. El jefe de terreno y el bodeguero usan una clave de 8 o más caracteres: la
+API la exige a todo rol que no sea trabajador.
+
+**Probar el escaneo de credencial sin la app del trabajador.** Como esa app
+todavía no existe, no hay QR que mostrar. Corre el script con
+`--renovar-credenciales`: imprime el código de cada trabajador (el anterior deja
+de valer), y el bodeguero lo escribe en el ingreso manual del escáner.
+
+> ⚠️ El script reemplaza PINs. Es solo para la base local: no lo corras contra un
+> servidor real.
 
 ### 3. App móvil
 
@@ -338,6 +407,18 @@ flutter run
 
 Con el celular conectado por USB (con depuración USB activada) o el emulador
 abierto. Confirmar que Flutter lo ve con `flutter devices`.
+
+**Sobre el emulador** — si no tienes el celular a mano, el camino corto es:
+
+```bash
+scripts/run-emulador.sh
+```
+
+Arranca el AVD `Check-In-Obra_Pixel5` si no está corriendo, espera a que
+termine de bootear, crea el `.env` desde `.env.example` si falta y lanza
+`flutter run -d emulator-5554`. Lo que le pases se lo pasa a `flutter run`
+(`scripts/run-emulador.sh --release`). Requiere tener el AVD creado — ver
+[Emulador (teléfono virtual)](#emulador-teléfono-virtual).
 
 > **En Windows, si el celular no aparece** en `flutter devices`, casi siempre
 > falta el driver USB del fabricante. Instalar el
@@ -443,6 +524,7 @@ cd mobile
 flutter pub get                       # instalar dependencias
 flutter analyze                       # análisis estático
 flutter run                           # correr en el dispositivo
+flutter run -d emulator-5554          # correr en el emulador (ver scripts/run-emulador.sh)
 flutter build apk --debug             # APK de depuración
 flutter build apk --release           # APK de release
 dart run build_runner build           # generar código de Drift
@@ -485,28 +567,101 @@ una operación de un tenant — necesitaría un rol por encima de los cuatro, y
 este sistema tiene cuatro por diseño.
 
 Una constructora nueva se crea por migración junto con su primer ADMIN, como
-hace `V2__seed_admin.sql`:
+hacía `V2__seed_admin.sql`:
 
 ```sql
 INSERT INTO empresas (nombre, rut) VALUES ('Constructora Nueva Ltda.', '77.111.222-3');
 
-INSERT INTO usuarios (nombre, email, rol, pin_hash, empresa_id)
+INSERT INTO usuarios (nombre, email, rol, pin_hash, debe_cambiar_pin, empresa_id)
 VALUES ('Admin Nueva', 'admin@nueva.cl', 'ADMIN',
-        '<hash BCrypt del PIN inicial>',
+        '<hash BCrypt de una clave temporal de 8 o más caracteres, que no esté en el repo>',
+        TRUE,
         (SELECT id FROM empresas WHERE rut = '77.111.222-3'));
 ```
 
-Su primera acción debe ser cambiar ese PIN desde la app.
+Con `debe_cambiar_pin = TRUE` su primera acción tiene que ser cambiar esa clave.
+
+### Escaneo e importación masiva
+
+Los endpoints que sostienen el escáner del bodeguero y la carga de catálogo:
+
+| Método y ruta | Para qué | Rol |
+|---|---|---|
+| `GET /api/trabajadores/por-credencial/{qr}` | Resolver la credencial QR que el bodeguero acaba de escanear | Bodeguero · Jefe · Admin |
+| `GET /api/materiales/por-codigo/{codigo}` | Resolver un código de barras **o** un SKU al material del catálogo | Autenticado |
+| `GET /api/herramientas/por-codigo/{codigo}` | Ídem para el código impreso en la etiqueta de una herramienta | Autenticado |
+| `POST /api/materiales/importar` | Alta masiva de materiales desde `.xlsx` | Admin |
+| `POST /api/herramientas/importar` | Alta masiva de herramientas desde `.xlsx` | Bodeguero · Admin |
+| `GET /api/materiales/plantilla-importacion` | Descargar la planilla vacía con las columnas en orden | Admin |
+| `GET /api/herramientas/plantilla-importacion` | Ídem para herramientas | Bodeguero · Admin |
+
+Los dos `importar` son `multipart/form-data` con el archivo en el campo
+`archivo`, y aceptan `?confirmar=`:
+
+- **`confirmar=false`** (por defecto) — **simula**. Valida el archivo completo y
+  devuelve el mismo informe que devolvería la importación real, sin escribir
+  nada. Es lo que la app muestra antes de dejar apretar el botón.
+- **`confirmar=true`** — importa, y solo si **ninguna** fila tiene problemas.
+
+La importación es **todo o nada**. Con una fila mala no se guarda ninguna: se
+corrige la planilla y se vuelve a subir. Importar "lo que se pueda" deja el
+catálogo a medias y sin forma de saber qué entró. El informe es el mismo en los
+dos casos:
+
+```json
+{
+  "confirmado": false,
+  "filasLeidas": 34,
+  "filasValidas": 33,
+  "importadas": 0,
+  "errores": [
+    { "fila": 12, "detalle": "La categoría 'PLANCHA' no existe (válidas: METALCOM, VOLCANITA, OSB, FIJACION)" }
+  ]
+}
+```
+
+El número de fila es **el que muestra Excel**, para poder ir directo a
+corregirla. El tope es de 2.000 filas y 5 MB por archivo: una planilla de
+catálogo pesa kilobytes, y un archivo mucho mayor casi siempre es el archivo
+equivocado.
 
 ### Autenticación
 
 Dos formas de entrar, ambas devuelven el mismo JWT:
 
-- `POST /api/auth/login` — correo + PIN. Para admin, jefe de terreno y bodeguero.
-- `POST /api/auth/login-pin` — id de usuario + PIN. Para el trabajador, cuyo
-  teléfono ya lo tiene identificado (nadie escribe un correo con guantes puestos).
+- `POST /api/auth/login` — correo + clave. Admin, jefe de terreno y bodeguero
+  usan una **clave de 8 a 72 caracteres**; el trabajador, su PIN de 4 dígitos. El
+  campo del cuerpo es `pin` (también se acepta `clave`).
+- `POST /api/auth/login-pin` — id de usuario + PIN. **Solo para el trabajador**,
+  cuyo teléfono ya lo tiene identificado (nadie escribe un correo con guantes
+  puestos). Con el id de otro rol responde igual que con un PIN equivocado.
 
-El token dura 8 horas y lleva el id, el rol y la empresa del usuario.
+**Intentos fallidos.** Tras 5 fallos seguidos la cuenta se bloquea 1 minuto; desde
+ahí, cada fallo más la bloquea otra vez con el doble de tiempo (hasta 1 hora). Una
+IP con 30 fallos se bloquea 5 minutos, también creciente. Mientras dura el bloqueo
+la API responde `429` con la cabecera `Retry-After` (segundos) y
+`codigo: DEMASIADOS_INTENTOS`, **sin mirar la clave**: ni la correcta entra. Un
+acierto reinicia la cuenta. Las cuentas que no existen se bloquean igual y tardan
+lo mismo que las que sí, para no revelar qué correos están registrados. Los
+topes se ajustan con `checkinobra.login.*` (ver `application.properties`). El
+estado vive en memoria, así que se reinicia con la API y no se comparte entre
+instancias; y la IP es la del socket (`getRemoteAddr`), que tras un proxy será la
+del proxy hasta configurar `server.forward-headers-strategy`.
+
+### Sesión y tokens
+
+- **El token de acceso dura 30 minutos** (`checkinobra.jwt.expiracion-minutos`; antes, 8 horas) y lleva el id, el rol y la empresa del usuario, el emisor (`iss=checkinobra`), la audiencia (`aud=checkinobra-api`) y la versión de sesión (`tv`). Un token sin esos campos, o con otros, no entra.
+- **Se revalida en cada petición**: el usuario tiene que existir y seguir con la misma `token_version` con que se emitió el token. La versión sube al **restablecer la clave** de un usuario o al **cambiar la propia**, y deja sin efecto, de inmediato, todos sus tokens anteriores (y sus refresh tokens).
+- **Refresh token**: cada login (y cada cambio de clave) devuelve también `refreshToken`. `POST /api/auth/refresh` con `{"refreshToken": "..."}` devuelve un par nuevo (acceso y refresh) y deja revocado el presentado (rotación). Dura 7 días sin usarse (`checkinobra.jwt.refresh-dias`). Se guarda solo su hash. **Si se presenta uno ya usado se asume robo y se revocan todas las sesiones del usuario.** Un refresh que no sirve (inexistente, vencido, revocado, mal formado) responde siempre `401` con `codigo: SESION_INVALIDA`, sin decir cuál fue el motivo.
+- `POST /api/auth/logout` con el mismo cuerpo revoca el refresh token y responde siempre `204`.
+
+### Registro de eventos de seguridad
+
+El logger `seguridad` escribe una línea `evento=… clave=valor` por login exitoso, fallido y bloqueado, acceso denegado (403 por rol), clave restablecida o cambiada, usuario creado y uso o reutilización de un refresh token. Lleva el id de usuario y de empresa y la IP; **nunca** claves, tokens ni correos. Se puede enviar aparte configurando ese logger en `logback`.
+
+### Errores
+
+El cuerpo de un error lleva el mensaje solo de las excepciones que escribimos nosotros; las de librerías (`Invalid UUID string: …`, `No value present`) salen con un texto genérico y el original queda en el log.
 
 ### Códigos de respuesta
 
@@ -528,6 +683,7 @@ es `Usuario.rol`, y con eso el backend decide qué autoriza (`@PreAuthorize`).
 |---|:---:|:---:|:---:|:---:|
 | Solicitar herramienta o material | ✅ | — | — | — |
 | Mostrar credencial QR | ✅ | — | — | — |
+| Escanear la credencial de un trabajador | — | ✅ | ✅ | ✅ |
 | Aprobar o rechazar solicitudes | — | ✅ | — | ✅ |
 | Recepción, despacho y consumo | — | ✅ | — | ✅ |
 | Autorizar préstamo y devolución | — | ✅ | — | ✅ |
@@ -537,6 +693,8 @@ es `Usuario.rol`, y con eso el backend decide qué autoriza (`@PreAuthorize`).
 | Resolver alertas | — | ✅ | ✅ | ✅ |
 | Crear usuarios y asignar rol | — | — | — | ✅ |
 | Catálogo, precios y mermas | — | — | — | ✅ |
+| Importar materiales desde Excel | — | — | — | ✅ |
+| Importar herramientas desde Excel | — | ✅ | — | ✅ |
 | Crear y cerrar obras | — | — | — | ✅ |
 | Consultar kardex y stock de una obra | — | ✅ | ✅ | ✅ |
 | Consultar el padrón de usuarios | — | — | — | ✅ |
@@ -610,17 +768,111 @@ Se usan 8081 y 5433 en el host —no los 8080/5432 habituales— porque esos pue
 suelen estar ocupados por otros proyectos. Entre contenedores la comunicación
 sigue siendo `db:5432`, así que la aplicación no se entera del cambio.
 
+El puerto de PostgreSQL se publica **solo en `127.0.0.1`**: desde otra máquina de
+la red no se llega a la base (antes se publicaba en todas las interfaces).
+
+### Roles de la base
+
+Ninguno de los tres usuarios que toca el sistema es de uso libre:
+
+| Rol | Para qué | Permisos | Contraseña (en `.env`) |
+|---|---|---|---|
+| `checkinobra_app` | La API en ejecución | Solo `SELECT`, `INSERT`, `UPDATE` y `DELETE`. No es superusuario y no puede crear, alterar ni borrar tablas | `DB_APP_PASSWORD` |
+| `checkinobra_migrador` | Flyway, al arrancar | Dueño del esquema: aplica las migraciones (DDL). Tampoco es superusuario | `DB_MIGRADOR_PASSWORD` |
+| `checkinobra_plataforma` | La API, para leer y escribir la **base de catálogo** | Solo `SELECT/INSERT/UPDATE/DELETE` en `checkinobra_catalogo`. No puede conectarse a la base de una empresa | `DB_PLATAFORMA_PASSWORD` |
+| `postgres` | Administración | Superusuario. La API no lo usa | `POSTGRES_PASSWORD` |
+
+Los crea `db/crear-roles.sh` (SQL en `db/roles.sql`). `ALTER DEFAULT PRIVILEGES` hace
+que las tablas que cree una migración nueva queden accesibles para la API sin
+escribir un `GRANT` en cada una. Para comprobarlo:
+`SELECT rolsuper FROM pg_roles WHERE rolname = 'checkinobra_app'` devuelve `f`.
+
+Si un fallo de la API la compromete, quien la controla puede leer y escribir datos,
+pero no borrar tablas ni cambiar el esquema. Cada rol solo puede conectarse a su
+base: `checkinobra_app` a la de la empresa, `checkinobra_plataforma` al catálogo.
+
+### Seguridad de la cadena de entrega
+
+- **CI** (`.github/workflows`): permisos mínimos (`contents: read`), todas las acciones fijadas por SHA, `CodeQL` sobre el backend y revisión de dependencias en cada PR (`dependency-review`, bloquea severidad alta). **Estos dos jobs solo corren si la variable de repositorio `GHAS` vale `true`** (Settings → Secrets and variables → Actions → Variables): exigen GitHub Advanced Security y en un repositorio privado sin ella fallarían en cada PR. Quien lo habilite define la variable y, para `dependency-review`, activa también el grafo de dependencias.
+- **Dependabot** (`.github/dependabot.yml`): maven, pub, github-actions, docker y docker-compose, una vez por semana.
+- **Imágenes** (`backend/Dockerfile`, `docker-compose.yml` y la CI): fijadas por digest; el contenedor del backend no corre como root y tiene `HEALTHCHECK`. Dependabot propone el digest nuevo.
+- springdoc está en la línea 3.x, la de Spring Boot 4.
+
+### Operadores de plataforma (rol `PLATAFORMA`)
+
+El personal de la plataforma entra por `POST /api/plataforma/auth/login` (`{"email","clave"}`) y no pertenece a ninguna empresa: vive en la tabla `operadores` del catálogo, y su token lleva `rol=PLATAFORMA` y **no lleva `empresaId`**. Se revalida en cada petición contra el catálogo (el operador debe estar activo y con la `token_version` del token). Tiene las mismas defensas de login que una empresa (bloqueo por cuenta e IP, mismo error para clave equivocada, correo inexistente y operador desactivado) y una clave de **12 a 72 caracteres**.
+
+- `/api/plataforma/**` exige `PLATAFORMA`: un token de empresa recibe **403**.
+- Toda ruta de empresa (también las que solo piden "estar autenticado", como `PUT /api/auth/pin`) rechaza un token de plataforma con **403**.
+- Un token de empresa sin `empresaId` es **401** (no 500), y uno de plataforma que además trae `empresaId` también.
+- `PLATAFORMA` no se puede asignar a un usuario de empresa (`UsuarioService.crear` lo rechaza).
+- Rutas por ahora: `GET /api/plataforma/yo` y `GET /api/plataforma/empresas` (sin usuario de base ni referencia al secreto).
+- **Alta de una constructora**: `POST /api/plataforma/empresas` con `{"rut","nombre","adminEmail","adminClave"?,"copiarCatalogoBase"?}` crea, en una sola operación y sin reiniciar la API: el registro en el catálogo, la base `checkinobra_e<dígitos del RUT>` y su usuario de PostgreSQL (`app_e<dígitos>`, solo DML y solo conectado a su base), el esquema (Flyway), la empresa con el mismo id que tiene en el catálogo, el pool en caliente y el primer **ADMIN**, obligado a cambiar la clave en su primer ingreso. Si no se envía `adminClave`, se genera una y se devuelve **una sola vez** en `claveTemporal`. Con `copiarCatalogoBase: true` copia ~12 materiales de referencia (placa yeso-cartón, perfiles, tornillos, OSB; `db/catalogo-base/materiales.csv`) con precios de referencia que la empresa edita. El RUT es único y se valida (400 si no es válido, 409 si ya existe). **Si un paso falla se deshace todo**: la empresa del catálogo, la base, el usuario de PostgreSQL, el secreto y el correo reservado.
+  - Requiere el rol `checkinobra_aprovisionador` (`CREATEDB` y `CREATEROLE`; `DB_APROVISIONADOR_PASSWORD`), distinto del de la API y del migrador. Sin esa variable el alta responde que no está habilitada. Es una credencial poderosa: guardarla solo donde corre la API. Puede hacer `SET ROLE` al migrador (PostgreSQL lo exige para crear una base cuyo dueño es el migrador) pero no hereda sus permisos.
+  - **La contraseña de cada base nueva no está en el catálogo ni en el entorno**: el catálogo guarda la referencia `file:app_e<dígitos>` y el secreto es un archivo (modo `600`) del directorio `SECRETOS_DIR` (`/secretos` en el contenedor, un volumen `secretos`). **Ese volumen hay que respaldarlo junto con las bases**: si se pierde, las bases de esas empresas no se pueden abrir.
+- **Suspender y reactivar**: `PUT /api/plataforma/empresas/{id}/estado` con `{"estado":"SUSPENDIDA"}` (o `"ACTIVA"`). Idempotente. Una empresa suspendida pierde su pool y **recibe `403` con `codigo: EMPRESA_SUSPENDIDA` en cada petición** (la decide `JwtAuthFilter` a partir del catálogo, sin abrir su base); su gente no puede volver a entrar (el login responde como para una cuenta inexistente) y las tareas programadas la saltan. **No toca sus datos**, y las demás empresas siguen igual. Reactivarla la devuelve a como estaba, con los mismos tokens aún vigentes.
+- **Respaldo y restauración por base** (`pg_dump`, por empresa: el archivo de una constructora no trae datos de otra). La imagen del backend **no incluye `pg_dump`** (`eclipse-temurin:21-jre-alpine` no lo trae): el respaldo es un trabajo aparte, con las herramientas de PostgreSQL del contenedor de la base o del servidor:
+  ```bash
+  # nombre de la base: columna empresas.nombre_base del catálogo (p. ej. checkinobra_e764123309)
+  export CHECKINOBRA_MIGRADOR_PASSWORD=...        # DB_MIGRADOR_PASSWORD del .env
+  export PG_PREFIX="docker compose exec -T db"    # sin esto usa pg_dump del PATH (PGHOST/PGPORT)
+  scripts/respaldar-empresa.sh checkinobra_e764123309 ./respaldos   # imprime el archivo (-Fc, modo 600, verificado)
+
+  export CHECKINOBRA_APROVISIONADOR_PASSWORD=...
+  scripts/restaurar-empresa.sh respaldos/<archivo>.dump checkinobra_e764123309 app_e764123309
+  ```
+  **`pg_dump` y `pg_restore` deben ser de la misma versión mayor que el servidor.** Uno más nuevo escribe un volcado con parámetros que un servidor más viejo no conoce (un `pg_dump` 17 sobre PostgreSQL 16 trae `SET transaction_timeout`, que el 16 rechaza) y la restauración falla a mitad; uno más viejo se niega a volcar. Los dos scripts lo comprueban antes de tocar nada y se detienen con el código 4 si difieren. Por eso se recomienda `PG_PREFIX` con las herramientas del propio contenedor de la base, que siempre coinciden con su servidor (es lo que hace la CI).
+  `restaurar-empresa.sh` **nunca sobrescribe** (si la base ya existe, se detiene), crea la base con los permisos de una empresa dada de alta, carga el respaldo y, si algo falla, **borra la base a medias**. Para recuperar una empresa cuya base se perdió, se restaura con el mismo nombre de base y usuario del catálogo y después se reactiva (`PUT …/estado` con `"ACTIVA"`) para que la API abra su pool. Los respaldos tienen los datos de la empresa: guardarlos cifrados y fuera del servidor. Programarlos (cron) es de quien despliega; el repositorio no lo hace. Estos scripts respaldan **las bases**, no el volumen `secretos`, que hay que respaldar aparte.
+- **Borrar una empresa** (no hay endpoint a propósito: es irreversible y lo hace una persona, con respaldo): (1) suspenderla; (2) respaldarla y guardar el archivo fuera del servidor; (3) en la base de catálogo, `DELETE FROM indice_login WHERE empresa_id = <id>; DELETE FROM empresas WHERE id = <id>;`; (4) reactivar el refresco de pools reiniciando la API o con cualquier `PUT …/estado` de otra empresa; (5) `DROP DATABASE checkinobra_e…;` y `DROP ROLE app_e…;` (con el rol aprovisionador o el superusuario, sin conexiones abiertas); (6) borrar el archivo `app_e…` del directorio de secretos. Sin el paso 2 no hay vuelta atrás.
+- **Primer operador**: si el catálogo no tiene ninguno y se definen `PLATAFORMA_OPERADOR_EMAIL` y `PLATAFORMA_OPERADOR_CLAVE`, se crea al arrancar. Con operadores ya creados las variables se ignoran.
+
+### Base de catálogo
+
+`checkinobra_catalogo` guarda qué empresas existen y cómo conectarse a la base de
+cada una (tablas `planes`, `empresas`, `operadores` e `indice_login`, esta última
+de correo a empresa). Sus migraciones están en `backend/src/main/resources/db/catalogo`
+y las aplica el migrador al arrancar la API. El catálogo guarda una
+*referencia* al secreto (`env:SPRING_DATASOURCE_PASSWORD`), nunca la contraseña.
+Las decisiones de diseño están en
+[`docs/arquitectura/multitenant.html`](docs/arquitectura/multitenant.html).
+
+### Una base por empresa: el enrutador
+
+Cada petición abre **solo la base de la empresa de su token** (MT2):
+
+1. `JwtAuthFilter` valida el token y deja su `empresaId` en el `TenantContext` (un `ThreadLocal`), que limpia en un `finally` cuando termina toda la cadena. Un token sin `empresaId`, o de una empresa sin base registrada o suspendida, no abre nada y la petición sale como `401`.
+2. `TenantRoutingDataSource` (un `AbstractRoutingDataSource`) entrega la conexión del pool de esa empresa. **No tiene base por defecto**: sin empresa en el contexto, tocar la base lanza `SinEmpresaEnContextoException` (un `500`, no un conflicto).
+3. Hay un pool por empresa, armado al arrancar leyendo el catálogo (`ResolutorPorCatalogo`) con la contraseña que indica la referencia `env:VARIABLE`. Una empresa mal registrada se anota en el log y no impide arrancar a las demás.
+4. En el arranque, `BaseInicialInicializador` registra en el catálogo la base actual con el id de su empresa y, en una base vacía con `PRIMER_ADMIN_CLAVE`, crea la empresa. Fuera de una petición (arranque, tareas programadas) la empresa se fija a mano con `TenantContext.ejecutarEn`.
+
+**El login resuelve la empresa antes de tocar la base.** `POST /api/auth/login` busca el correo en el índice del catálogo; `POST /api/auth/login-pin` recibe `empresaId` junto a `usuarioId` (los ids de usuario se repiten entre bases; si falta y hay una sola empresa se usa esa). Un correo o empresa desconocidos se tratan como una cuenta que no existe, y un usuario encontrado en la base pedida solo vale si es de esa empresa (segunda comprobación, además de abrir su base). Crear un usuario reserva su correo en el catálogo, donde es único en todo el sistema.
+
+**Hibernate ya no valida el esquema al arrancar**: no hay una base a la cual conectarse sin empresa. El dialecto se fija a mano y `ddl-auto=none`; la suite de pruebas sí valida el mapeo contra una base.
+
+### Flyway por base
+
+Las migraciones de `db/migration` las corre `MigradorDeBases` (Flyway programático; el de Spring Boot está desactivado porque migra una sola base) **sobre la base de cada empresa del catálogo**, con el usuario migrador y una por una:
+
+- Al arrancar recorre las empresas activas. Una base **vacía** registrada en el catálogo queda con el esquema completo y en la última versión en ese mismo paso; una ya migrada no cambia.
+- El resultado de cada base queda en el catálogo (`empresas.migracion_estado`: `PENDIENTE`, `OK` o `ERROR`, con `migracion_error` y `migrada_en`).
+- **Una base que falla queda anotada, sin abrir (su empresa no tiene pool y sus tokens no valen) y no impide arrancar a las demás.** Una base nueva empieza `PENDIENTE` y solo se abre cuando su migración sale `OK`.
+- `RegistroIdempotencia.purgarVencidas`, la única tarea programada, recorre las empresas con base abierta y fija la de cada una (MT2).
+
+La base de una empresa tiene que existir antes y el migrador, poder conectarse y crear tablas en ella; crearla es parte del alta de empresas (fase 4). `db/crear-base-de-empresa.sql` hace ese paso de infraestructura (la base vacía, con el migrador de dueño y la API con permiso de conexión y de DML) y es lo que usan las pruebas de aislamiento para tener una segunda base.
+
+
+
 ### Conectarse con un cliente SQL
 
 | Campo | Valor |
 |---|---|
-| Host | `localhost` |
+| Host | `localhost` (solo desde esta máquina) |
 | Puerto | `5433` |
 | Base | `checkinobra` |
-| Usuario | `postgres` |
-| Contraseña | `postgres` |
+| Usuario | `checkinobra_app` para consultar; `checkinobra_migrador` para cambiar el esquema a mano |
+| Contraseña | `DB_APP_PASSWORD` o `DB_MIGRADOR_PASSWORD` del `.env` de la raíz |
 
-O por terminal:
+O por terminal, como superusuario (por el socket del contenedor, sin contraseña):
 
 ```bash
 docker compose exec db psql -U postgres -d checkinobra
@@ -634,7 +886,10 @@ solo verifica que las entidades calcen con las tablas).
 | Archivo | Qué hace |
 |---|---|
 | `V1__init_schema.sql` | Crea las 17 tablas con sus llaves foráneas e índices |
-| `V2__seed_admin.sql` | Inserta una empresa y el admin de arranque |
+| `V2__seed_admin.sql` | **Ya no está** (MT1): sembraba la empresa y el admin con el PIN `0000`. Las bases que la aplicaron la conservan en su historial; la `V11` anuló su PIN |
+| `V3__rut_en_usuario_...sql` | Sube el RUT a `usuarios`, agrega el jefe de la obra y el receptor del despacho |
+| `V4__codigo_de_barra_en_materiales.sql` | Agrega `materiales.codigo_barra` (único **por empresa**) para el escáner |
+| `V5__normaliza_codigos_a_mayusculas.sql` | Pasa a mayúsculas los SKU y códigos de herramienta existentes |
 
 **Para cambiar el esquema** se crea un archivo nuevo (`V3__...sql`). Nunca se
 edita una migración ya aplicada: Flyway guarda un hash de cada una y falla si
@@ -748,7 +1003,8 @@ El `UNIQUE` en `usuario_id` es lo que hace que la relación sea 1–1: un
 
 | Columna | Tipo | Notas |
 |---|---|---|
-| `sku` | `VARCHAR(50)` | NOT NULL, UNIQUE |
+| `sku` | `VARCHAR(50)` | NOT NULL, único por empresa (`UNIQUE (empresa_id, sku)`, V13) — interno, el de la guía de despacho |
+| `codigo_barra` | `VARCHAR(50)` | UNIQUE **por empresa**, nullable — el de fábrica, lo que lee el escáner |
 | `nombre` | `VARCHAR(200)` | NOT NULL |
 | `categoria` | `VARCHAR(20)` | NOT NULL — enum `CategoriaMaterial` |
 | `precio_unitario` | `DOUBLE PRECISION` | NOT NULL |
@@ -814,7 +1070,7 @@ posterior en el catálogo no altera los presupuestos ya armados.
 
 | Columna | Tipo | Notas |
 |---|---|---|
-| `codigo_qr` | `VARCHAR(100)` | NOT NULL, UNIQUE |
+| `codigo_qr` | `VARCHAR(100)` | NOT NULL, único por empresa (`UNIQUE (empresa_id, codigo_qr)`, V13) |
 | `nombre` | `VARCHAR(200)` | NOT NULL |
 | `categoria` | `VARCHAR(100)` | NOT NULL — texto libre, no enum |
 | `estado` | `VARCHAR(20)` | NOT NULL — enum `EstadoHerramienta` |
@@ -945,8 +1201,9 @@ El enrutado está en `main.dart`, en `_paraElRol`.
 
 Cuatro pestañas sobre una obra elegida al entrar y recordada por el teléfono:
 
-1. **Inicio** — contadores del turno, **capital en la obra**, alertas sin
-   resolver, últimos movimientos y el acceso a cerrar turno.
+1. **Inicio** — contadores del turno, la **cola de solicitudes**, los dos
+   escaneos, **capital en la obra**, alertas sin resolver, últimos movimientos
+   y el acceso a cerrar turno.
 2. **Bodega** — el catálogo cruzado con el saldo de la obra, ordenado por
    criticidad y filtrable por crítico/bajo. De ahí se entra al detalle del
    material, que muestra el kardex completo con el saldo tras cada movimiento,
@@ -956,6 +1213,31 @@ Cuatro pestañas sobre una obra elegida al entrar y recordada por el teléfono:
    quedar disponible para el siguiente préstamo.
 4. **Alertas** — dispara la detección en el backend al abrirse (no hay tareas
    programadas: las alertas nacen cuando alguien mira) y permite resolverlas.
+
+**El QR identifica a la persona, no al material.** El trabajador muestra su
+credencial en el teléfono, el bodeguero la escanea y en la pantalla siguiente
+aparece lo que esa persona pidió, listo para **aprobar o rechazar**: aprobar una
+solicitud de material despacha del kardex a su nombre, y aprobar una de
+herramienta genera el préstamo con su fecha de devolución. El código no
+autoriza por sí solo — quien aprueba sigue siendo el bodeguero autenticado, y
+así queda registrado.
+
+Aprobar material **pregunta cuánto se entrega** en vez de asumir lo pedido: en
+bodega pasa seguido que no alcanza para todo, y entregar 30 de las 36 planchas
+pedidas es una decisión legítima que el kardex tiene que reflejar. Rechazar
+exige un motivo, que es lo único que el trabajador va a ver en su teléfono.
+
+**El escáner de código de barras** resuelve otro problema: encontrar la ficha
+correcta sin buscarla en una lista de materiales parecidos. Lee el código
+impreso de fábrica en el envase, el SKU de la empresa o la etiqueta de una
+herramienta —quien apunta la cámara no tiene por qué saber cuál es— y lleva
+directo a registrar el movimiento. Con una herramienta, la acción depende de
+dónde esté: si está en bodega lleva a prestarla, y si está prestada, a recibirla
+de vuelta.
+
+Los dos escaneos tienen **ingreso manual** al lado: una etiqueta rota, una
+credencial mojada o un permiso de cámara denegado no pueden dejar al bodeguero
+sin poder despachar.
 
 La pantalla de movimiento muestra **el saldo que va a quedar antes de
 confirmar**, y avisa si cruza el mínimo de obra. Es lo que convierte el
@@ -986,12 +1268,24 @@ Cuatro pestañas sobre la empresa:
    no tendría los permisos que el puesto necesita. Cerrar advierte que la
    desviación queda fijada y que no se puede reabrir.
 2. **Materiales** — catálogo por categoría; precio unitario y merma se editan
-   juntos, que es lo que cambia de un material ya creado.
+   juntos, que es lo que cambia de un material ya creado. El alta admite el
+   **código de barras** del envase, que se puede leer con la cámara en vez de
+   teclear trece dígitos.
 3. **Usuarios** — el padrón por rol, alta con **RUT**, rol y PIN inicial, y
    restablecimiento de PIN. El diálogo dice lo que corresponde: el PIN anterior
    no se puede recuperar, solo reemplazar.
-4. **Empresa** — datos, contadores y el acceso a la **vista de bodega**, porque
-   la matriz de permisos le concede al admin todo lo de bodega.
+4. **Empresa** — datos, contadores, la **importación masiva** y el acceso a la
+   **vista de bodega**, porque la matriz de permisos le concede al admin todo lo
+   de bodega.
+
+**Importación masiva.** El catálogo de la constructora ya vive en Excel:
+cargarlo a mano en un teléfono son treinta y cuatro formularios y varios errores
+de dedo que después se propagan a cada presupuesto. La pantalla descarga la
+plantilla con las columnas en orden, sube la planilla llena, **muestra el
+informe fila por fila** y recién entonces deja confirmar. Si algo está mal no se
+importa nada: se corrige el archivo y se vuelve a subir. El bodeguero tiene la
+misma pantalla acotada a herramientas, porque es quien las etiqueta y las da de
+alta cuando llegan.
 
 #### Lo que falta
 
@@ -1037,12 +1331,27 @@ hw.gpu.mode=host
 **Arrancarlo:**
 
 ```bash
+scripts/run-emulador.sh               # arranca el AVD, espera el boot y corre la app
+```
+
+El script es el atajo de estos tres pasos, que también sirven sueltos:
+
+```bash
 emulator -avd Check-In-Obra_Pixel5 &
 flutter devices                       # debe aparecer emulator-5554
 flutter run -d emulator-5554
 ```
 
+`-d emulator-5554` es lo que evita que Flutter pregunte cuál dispositivo usar
+cuando además hay un celular conectado por USB.
+
 También se puede lanzar desde Android Studio: *Device Manager* → ▶ junto al AVD.
+
+> Si tu AVD se llama distinto o levanta en otro puerto:
+> `AVD=MiAvd DISPOSITIVO=emulator-5556 scripts/run-emulador.sh`.
+>
+> El script es de Ubuntu/macOS. En Windows, corre los tres comandos sueltos
+> desde PowerShell.
 
 > **Aceleración por hardware.** El emulador necesita KVM (Linux) o WHPX
 > (Windows) para no ir lentísimo. Comprobar con:
@@ -1099,9 +1408,12 @@ exige compilar contra 37 y el build falla sin eso. Es retrocompatible: no afecta
 
 En `docs/`:
 
+- **`ESPECIFICACION.md`** — qué hace el sistema y bajo qué reglas: actores,
+  modelo de datos, los 51 requisitos funcionales, las 27 reglas de negocio con
+  su código de respuesta, los ciclos de vida y los requisitos no funcionales.
 - **`diagrams/`** — Diagrama de clases del MVP1. Es la fuente de verdad del
   modelo: entidades, enums y relaciones del backend salen de ahí.
-- **`design-system/`** — Paleta, tipografía (Fira Sans + Fira Code), estilo e
+- **`design-system/`** — Paleta, tipografía (Inter con cifras tabulares), estilo e
   íconos, con las reglas UX que aplican en terreno.
 - **`mockups/`** — Tres lienzos con las pantallas diseñadas. `design-movil/`
   es el más completo: 34 pantallas de teléfono organizadas por rol, más un mapa
@@ -1109,11 +1421,14 @@ En `docs/`:
 
 Los `.dc.html` se abren directamente en el navegador.
 
-### Estado del proyecto
+### Especificación y estado
 
-**[`docs/PENDIENTES.md`](docs/PENDIENTES.md)** — qué está hecho, qué falta, en
-qué orden conviene atacarlo y qué riesgos hay abiertos. Es el documento a
-revisar antes de tomar una tarea.
+- **[`docs/ESPECIFICACION.md`](docs/ESPECIFICACION.md)** — la especificación del
+  sistema completo. Es el documento a revisar para saber **qué debe hacer** algo
+  y por qué, antes de cambiarlo.
+- **[`docs/PENDIENTES.md`](docs/PENDIENTES.md)** — qué está hecho, qué falta, en
+  qué orden conviene atacarlo y qué riesgos hay abiertos. Es el documento a
+  revisar antes de tomar una tarea.
 
 ---
 

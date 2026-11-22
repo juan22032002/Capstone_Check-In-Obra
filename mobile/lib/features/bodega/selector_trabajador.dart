@@ -100,7 +100,7 @@ class SelectorTrabajador extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: 12.5,
                   height: 1.4,
-                  color: Color(0xFF92400E),
+                  color: AppColors.warningInk,
                 ),
               ),
             ),
@@ -133,7 +133,7 @@ class SelectorTrabajador extends ConsumerWidget {
             const Icon(
               Icons.chevron_right,
               size: 22,
-              color: AppColors.accentFill,
+              color: AppColors.secondary,
             ),
           ],
         ),

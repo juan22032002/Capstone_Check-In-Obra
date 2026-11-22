@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 e inferior: nada de la app entra a un respaldo. Con
+     allowBackup="false" ya no se respalda; esto lo deja escrito y cubre los
+     casos en que un fabricante lo ignore. Ahí viven el token de sesión y el
+     RUT recordado (hallazgo S-20). -->
+<full-backup-content>
+    <exclude domain="root" />
+    <exclude domain="file" />
+    <exclude domain="database" />
+    <exclude domain="sharedpref" />
+    <exclude domain="external" />
+</full-backup-content>

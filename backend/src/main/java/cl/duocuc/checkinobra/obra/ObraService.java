@@ -6,8 +6,11 @@ import cl.duocuc.checkinobra.config.RolUsuario;
 import cl.duocuc.checkinobra.config.AccesoEmpresa;
 import cl.duocuc.checkinobra.config.Empresa;
 import cl.duocuc.checkinobra.config.EmpresaService;
+import cl.duocuc.checkinobra.config.ConflictoException;
 import cl.duocuc.checkinobra.control.AlertaRepository;
 import cl.duocuc.checkinobra.inventario.PrestamoHerramientaRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,18 +26,21 @@ public class ObraService {
     private final PrestamoHerramientaRepository prestamoHerramientaRepository;
     private final AlertaRepository alertaRepository;
     private final UsuarioService usuarioService;
+    private final EntityManager entityManager;
 
     public ObraService(
             ObraRepository obraRepository,
             EmpresaService empresaService,
             PrestamoHerramientaRepository prestamoHerramientaRepository,
             AlertaRepository alertaRepository,
-            UsuarioService usuarioService) {
+            UsuarioService usuarioService,
+            EntityManager entityManager) {
         this.obraRepository = obraRepository;
         this.empresaService = empresaService;
         this.prestamoHerramientaRepository = prestamoHerramientaRepository;
         this.alertaRepository = alertaRepository;
         this.usuarioService = usuarioService;
+        this.entityManager = entityManager;
     }
 
     public Obra crear(
@@ -97,7 +103,10 @@ public class ObraService {
      * invoca Obra.cerrar().
      */
     public Obra cerrarObra(Long obraId) {
-        Obra obra = obtener(obraId);
+        // Con el mismo bloqueo que toma quien registra en la obra: un despacho o
+        // un préstamo en curso termina antes de que se cuenten las herramientas
+        // fuera, y uno que llega después ya ve la obra cerrada.
+        Obra obra = obtenerBloqueada(obraId);
 
         long herramientasFuera = prestamoHerramientaRepository.findByObraIdAndFechaDevolRealIsNull(obraId).size();
         if (herramientasFuera > 0) {
@@ -113,5 +122,37 @@ public class ObraService {
 
         obra.cerrar();
         return obraRepository.save(obra);
+    }
+
+    /**
+     * La obra, bloqueada hasta el fin de la transacción, y solo si sigue abierta.
+     *
+     * <p>Es la puerta de todo lo que escribe en el inventario de una obra. El
+     * bloqueo cierra dos carreras: dos despachos del mismo material que leen el
+     * mismo saldo y dejan el stock negativo, y un movimiento que se cuela
+     * mientras alguien cierra la obra. Serializar por obra es barato: en una
+     * bodega registran uno o dos bodegueros, no cientos.
+     */
+    public Obra obtenerAbiertaParaRegistrar(Long obraId) {
+        Obra obra = obtenerBloqueada(obraId);
+        if (obra.getEstado() == EstadoObra.CERRADA) {
+            throw new ConflictoException(ConflictoException.OBRA_CERRADA,
+                    "La obra " + obra.getNombre() + " está cerrada: ya no se registran movimientos en ella");
+        }
+        return obra;
+    }
+
+    /**
+     * La obra, bloqueada hasta el fin de la transacción, sin importar su estado.
+     *
+     * <p>{@code refresh} y no una consulta con bloqueo: si la obra ya se había
+     * cargado en esta transacción —la trae en EAGER cualquier solicitud o
+     * préstamo—, la consulta bloquearía la fila pero devolvería la copia vieja
+     * en memoria, y el estado que se compara sería el de antes de esperar.
+     */
+    public Obra obtenerBloqueada(Long obraId) {
+        Obra obra = obtener(obraId);
+        entityManager.refresh(obra, LockModeType.PESSIMISTIC_WRITE);
+        return obra;
     }
 }

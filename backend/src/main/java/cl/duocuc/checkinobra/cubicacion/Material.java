@@ -32,8 +32,23 @@ public class Material implements PerteneceAEmpresa {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    // Único por empresa: UNIQUE (empresa_id, sku), migración V13.
+    @Column(nullable = false)
     private String sku;
+
+    /**
+     * El código impreso de fábrica en el envase — lo que lee el escáner de
+     * código de barras del bodeguero. No está en el diagrama de clases: el
+     * modelo solo tenía el SKU, que es interno y no viene en ninguna etiqueta.
+     *
+     * <p>Nullable porque no todo material lo trae; esos se siguen encontrando
+     * por SKU. La unicidad es por empresa y vive en la restricción
+     * {@code uq_materiales_empresa_codigo_barra} (V4): el código es del
+     * producto, no de la constructora, así que dos empresas pueden tener el
+     * mismo.
+     */
+    @Column(name = "codigo_barra", length = 50)
+    private String codigoBarra;
 
     @Column(nullable = false)
     private String nombre;

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formato.dart';
 import '../../core/network/errores.dart';
+import '../../core/network/idempotencia.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/api/dominio_api.dart';
 import '../../data/modelos/alerta.dart';
@@ -104,11 +105,18 @@ class _FilaAlerta extends ConsumerStatefulWidget {
 
 class _FilaAlertaState extends ConsumerState<_FilaAlerta> {
   bool _enviando = false;
+  final _intento = IntentoIdempotente();
 
   Future<void> _resolver() async {
+    if (_enviando) return;
     setState(() => _enviando = true);
     try {
-      await ref.read(alertasApiProvider).resolver(widget.alerta.id);
+      await ref
+          .read(alertasApiProvider)
+          .resolver(
+            widget.alerta.id,
+            clave: _intento.clavePara([widget.alerta.id]),
+          );
       ref.invalidate(alertasProvider);
     } catch (e) {
       if (!mounted) return;
@@ -148,7 +156,7 @@ class _FilaAlertaState extends ConsumerState<_FilaAlerta> {
               Text(
                 Formato.antiguedad(a.fecha),
                 style: const TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   color: AppColors.secondary,
                 ),
               ),
@@ -158,30 +166,39 @@ class _FilaAlertaState extends ConsumerState<_FilaAlerta> {
           Text(
             a.mensaje,
             style: TextStyle(
-              fontSize: 13.5,
-              height: 1.4,
+              fontSize: 14.5,
+              height: 1.45,
               color: a.resuelto ? AppColors.secondary : AppColors.primary,
             ),
           ),
           if (!a.resuelto) ...[
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _enviando ? null : _resolver,
-              icon: _enviando
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.done, size: 18),
-              label: Text(_enviando ? 'Resolviendo…' : 'Marcar como resuelta'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(44),
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.zero,
+            // Compacto y a la derecha: con tres alertas seguidas, tres botones
+            // de ancho completo pesaban más que las alertas. 44 px de alto
+            // sigue siendo el mínimo para acertar con guantes.
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: _enviando ? null : _resolver,
+                icon: _enviando
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.done, size: 18),
+                label: Text(
+                  _enviando ? 'Resolviendo…' : 'Marcar como resuelta',
                 ),
-                side: const BorderSide(color: AppColors.borderControl),
-                foregroundColor: AppColors.primary,
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.1,
+                  ),
+                ),
               ),
             ),
           ],

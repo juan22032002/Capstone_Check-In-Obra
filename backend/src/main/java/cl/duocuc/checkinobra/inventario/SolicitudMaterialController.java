@@ -1,5 +1,12 @@
 package cl.duocuc.checkinobra.inventario;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
+import cl.duocuc.checkinobra.config.SesionActual;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,32 +37,62 @@ public class SolicitudMaterialController {
     @PostMapping
     @PreAuthorize("hasRole('TRABAJADOR')")
     @ResponseStatus(HttpStatus.CREATED)
-    public SolicitudMaterialResponse crear(@RequestBody CrearSolicitudRequest req) {
+    public SolicitudMaterialResponse crear(@Valid @RequestBody CrearSolicitudRequest req) {
         return SolicitudMaterialResponse.de(
-                solicitudMaterialService.crear(req.trabajadorId(), req.materialId(), req.obraId(), req.cantidad()));
+                solicitudMaterialService.crear(
+                        // Se pide a nombre propio: con el trabajadorId en el
+                        // cuerpo, un trabajador podía pedir a nombre de otro.
+                        SesionActual.usuarioId(), req.materialId(), req.obraId(), req.cantidad(),
+                        req.descripcion()));
     }
 
     /** Aprobar/rechazar es de BODEGUERO o ADMIN, según la matriz de permisos. */
     @PutMapping("/{id}/aprobar")
     @PreAuthorize("hasAnyRole('ADMIN', 'BODEGUERO')")
-    public KardexMovimientoResponse aprobar(@PathVariable Long id, @RequestBody AprobarRequest req) {
+    public KardexMovimientoResponse aprobar(@PathVariable Long id, @Valid @RequestBody AprobarRequest req) {
         // Aprobar despacha: lo que sale es el movimiento de kardex.
         return KardexMovimientoResponse.de(
-                solicitudMaterialService.aprobar(id, req.aprobadorId(), req.cantidadAEntregar()));
+                solicitudMaterialService.aprobar(id, SesionActual.usuarioId(), req.cantidadAEntregar()));
     }
 
     @PutMapping("/{id}/rechazar")
     @PreAuthorize("hasAnyRole('ADMIN', 'BODEGUERO')")
-    public SolicitudMaterialResponse rechazar(@PathVariable Long id, @RequestBody RechazarRequest req) {
+    public SolicitudMaterialResponse rechazar(@PathVariable Long id, @Valid @RequestBody RechazarRequest req) {
         return SolicitudMaterialResponse.de(
-                solicitudMaterialService.rechazar(id, req.rechazadorId(), req.motivo()));
+                solicitudMaterialService.rechazar(id, SesionActual.usuarioId(), req.motivo()));
     }
 
+    /** El trabajador retira su propia solicitud mientras sigue pendiente. */
+    @PutMapping("/{id}/cancelar")
+    @PreAuthorize("hasRole('TRABAJADOR')")
+    public SolicitudMaterialResponse cancelar(@PathVariable Long id) {
+        return SolicitudMaterialResponse.de(solicitudMaterialService.cancelar(id));
+    }
+
+    /** El trabajador confirma que recibió lo que bodega aprobó: APROBADA → ENTREGADA. */
+    @PutMapping("/{id}/confirmar-recepcion")
+    @PreAuthorize("hasRole('TRABAJADOR')")
+    public SolicitudMaterialResponse confirmarRecepcion(@PathVariable Long id) {
+        return SolicitudMaterialResponse.de(solicitudMaterialService.confirmarRecepcion(id));
+    }
+
+    /** Las propias, la más nueva primero. Sale del token: no recibe id. */
+    @GetMapping("/mias")
+    @PreAuthorize("hasRole('TRABAJADOR')")
+    public List<SolicitudMaterialResponse> mias() {
+        return solicitudMaterialService.listarMias().stream().map(SolicitudMaterialResponse::de).toList();
+    }
+
+    /** Un trabajador solo obtiene las suyas; lo exige el servicio. */
     @GetMapping("/{id}")
     public SolicitudMaterialResponse obtener(@PathVariable Long id) {
         return SolicitudMaterialResponse.de(solicitudMaterialService.obtener(id));
     }
 
+    /**
+     * Un trabajador solo puede listar por su propio {@code trabajadorId}; por
+     * obra vería las de sus compañeros. Lo exige el servicio.
+     */
     @GetMapping
     public List<SolicitudMaterialResponse> listar(
             @RequestParam(required = false) Long trabajadorId,
@@ -74,12 +111,19 @@ public class SolicitudMaterialController {
         return solicitudes.stream().map(SolicitudMaterialResponse::de).toList();
     }
 
-    public record CrearSolicitudRequest(Long trabajadorId, Long materialId, Long obraId, double cantidad) {
+    /** {@code obraId} es opcional: por defecto, la obra de la cuadrilla de quien pide. */
+    public record CrearSolicitudRequest(
+            @NotNull(message = "Falta el material") Long materialId,
+            Long obraId,
+            @Positive(message = "La cantidad pedida debe ser mayor que 0") @DecimalMax(value = "1000000", message = "La cantidad es demasiado grande") double cantidad,
+            @NotBlank(message = "Cuenta para qué lo necesitas") @Size(max = 300, message = "La descripción admite hasta 300 caracteres") String descripcion) {
     }
 
-    public record AprobarRequest(Long aprobadorId, double cantidadAEntregar) {
+    public record AprobarRequest(
+            @Positive(message = "La cantidad a entregar debe ser mayor que 0") @DecimalMax(value = "1000000", message = "La cantidad es demasiado grande") double cantidadAEntregar) {
     }
 
-    public record RechazarRequest(Long rechazadorId, String motivo) {
+    public record RechazarRequest(
+            @NotBlank(message = "El motivo es obligatorio") @Size(max = 500, message = "El motivo admite hasta 500 caracteres") String motivo) {
     }
 }

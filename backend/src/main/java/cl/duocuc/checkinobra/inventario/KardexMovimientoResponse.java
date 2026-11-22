@@ -1,5 +1,6 @@
 package cl.duocuc.checkinobra.inventario;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -23,7 +24,8 @@ public record KardexMovimientoResponse(
         String usuarioNombre,
         Long trabajadorId,
         String trabajadorNombre,
-        String trabajadorRut) {
+        String trabajadorRut,
+        BigDecimal costoUnitario) {
 
     public static KardexMovimientoResponse de(KardexMovimiento k) {
         boolean recibio = k.getTrabajador() != null;
@@ -42,6 +44,8 @@ public record KardexMovimientoResponse(
                 // trabajador asignado.
                 recibio ? k.getTrabajador().getId() : null,
                 recibio ? k.getTrabajador().nombre() : null,
-                recibio ? k.getTrabajador().rut() : null);
+                recibio ? k.getTrabajador().rut() : null,
+                // Solo en una recepción con factura; nulo en todo lo demás.
+                k.getCostoUnitario());
     }
 }

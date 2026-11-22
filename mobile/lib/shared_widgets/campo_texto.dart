@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_forma.dart';
 import '../core/theme/app_theme.dart';
 
 /// Campo de formulario del sistema. Los bordes y el relleno los pone el
@@ -53,15 +54,27 @@ class CampoTexto extends StatelessWidget {
       autocorrect: false,
       enableSuggestions: false,
       style: TextStyle(
-        fontFamily: mono ? AppTheme.monoFamily : null,
-        fontSize: 15,
+        fontSize: 16,
+        letterSpacing: mono ? 0 : -0.15,
+        fontWeight: mono ? FontWeight.w500 : FontWeight.w400,
         color: AppColors.primary,
       ),
       decoration: InputDecoration(
         hintText: hint,
         counterText: '',
-        prefixIcon: Icon(icono, size: 20, color: AppColors.secondary),
-        suffixIcon: sufijo,
+        prefixIcon: Padding(
+          padding: const EdgeInsets.only(left: 14, right: 10),
+          child: Icon(icono, size: 20, color: AppColors.secondary),
+        ),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: 44,
+          minHeight: 44,
+        ),
+        // Centrado en alto: un sufijo de texto ("pl", "kg") quedaba pegado
+        // arriba, porque la caja del sufijo es más alta que la línea.
+        suffixIcon: sufijo == null
+            ? null
+            : Center(widthFactor: 1, heightFactor: 1, child: sufijo),
       ),
     );
   }
@@ -85,24 +98,17 @@ class CampoConEtiqueta extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          etiqueta.toUpperCase(),
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.2,
-            color: AppColors.textMuted,
-          ),
-        ),
-        const SizedBox(height: 7),
+        // Tipo oración: "Cantidad a despachar" se lee de un vistazo; en
+        // mayúsculas espaciadas había que deletrearlo.
+        Text(etiqueta, style: AppTexto.rotulo),
+        const SizedBox(height: AppEspacio.sm),
         campo,
         if (ayuda != null) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: AppEspacio.sm - 2),
           Text(
             ayuda!,
-            style: const TextStyle(
-              fontSize: 12,
-              height: 1.35,
+            style: AppTexto.cuerpoChico.copyWith(
+              fontSize: 12.5,
               color: AppColors.secondary,
             ),
           ),

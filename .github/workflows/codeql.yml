@@ -1,0 +1,47 @@
+name: CodeQL
+
+# Análisis estático de seguridad del backend (SEG11, S-14). Dart no está soportado por CodeQL.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '23 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analizar:
+    name: CodeQL (Java)
+    # Solo corre cuando el dueño lo habilita con la variable de repositorio GHAS=true
+    # (Settings → Secrets and variables → Actions → Variables). Un repositorio privado sin
+    # GitHub Advanced Security no puede ejecutarlo y fallaría en cada PR; uno privado con GHAS
+    # sí, y por eso es una variable y no github.event.repository.private.
+    if: vars.GHAS == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+
+      - name: Compilar sin pruebas
+        working-directory: backend
+        run: ./mvnw -B -DskipTests package
+
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          category: /language:java-kotlin

@@ -7,6 +7,7 @@ class Herramienta {
     required this.categoria,
     required this.estado,
     required this.valorReposicion,
+    this.tieneValor = true,
   });
 
   final int id;
@@ -18,7 +19,14 @@ class Herramienta {
 
   /// `EstadoHerramienta`: DISPONIBLE, PRESTADA o MANTENCION.
   final String estado;
+
+  /// Lo que cuesta reponerla. El backend **no lo manda** al TRABAJADOR: cuando
+  /// falta queda en 0 y [tieneValor] en `false`; no mostrar "$0" como si fuera
+  /// un valor.
   final double valorReposicion;
+
+  /// `false` si el servidor no envió `valorReposicion` (rol sin acceso a costos).
+  final bool tieneValor;
 
   bool get disponible => estado == 'DISPONIBLE';
 
@@ -28,7 +36,8 @@ class Herramienta {
     nombre: j['nombre'] as String,
     categoria: j['categoria'] as String,
     estado: j['estado'] as String,
-    valorReposicion: (j['valorReposicion'] as num).toDouble(),
+    valorReposicion: (j['valorReposicion'] as num?)?.toDouble() ?? 0,
+    tieneValor: j['valorReposicion'] != null,
   );
 }
 

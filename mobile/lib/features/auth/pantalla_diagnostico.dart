@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_forma.dart';
 import '../../core/theme/app_theme.dart';
 import 'diagnostico_conexion.dart';
 
@@ -10,11 +12,27 @@ import 'diagnostico_conexion.dart';
 /// No es una pantalla del producto — es una herramienta de diagnóstico para
 /// el equipo, que valida la cadena completa teléfono → WiFi → Docker → Postgres
 /// antes de empezar a construir las pantallas reales.
+///
+/// **Solo existe fuera de release.** Muestra la URL del servidor, el contenido
+/// del `.env` y el comienzo del token de sesión: útil para armar el entorno,
+/// información de más en el teléfono de un usuario (hallazgo S-29). En release
+/// la pantalla no se dibuja aunque alguien la abra.
 class PantallaDiagnostico extends ConsumerWidget {
-  const PantallaDiagnostico({super.key});
+  const PantallaDiagnostico({super.key, this.disponible});
+
+  /// Solo para probar: por defecto la pantalla está disponible fuera de release.
+  final bool? disponible;
+
+  /// Si el diagnóstico se puede mostrar en este modo de compilación.
+  static bool get disponibleEnEstaCompilacion => !kReleaseMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!(disponible ?? disponibleEnEstaCompilacion)) {
+      return const Scaffold(
+        body: Center(child: Text('Esta pantalla no está disponible.')),
+      );
+    }
     final estado = ref.watch(diagnosticoConexionProvider);
     final envCargado = ref.watch(envCargadoProvider);
 
@@ -93,7 +111,7 @@ class _AvisoSinEnv extends StatelessWidget {
             style: TextStyle(
               fontSize: 12.5,
               height: 1.4,
-              color: Color(0xFF92400E),
+              color: AppColors.warningInk,
             ),
           ),
         ],
@@ -271,7 +289,7 @@ class _TarjetaResultado extends StatelessWidget {
               resultado.comoArreglarlo!,
               style: const TextStyle(
                 fontFamily: AppTheme.monoFamily,
-                fontSize: 11.5,
+                fontSize: 12.5,
                 height: 1.5,
                 color: AppColors.destructiveDark,
               ),
@@ -328,20 +346,12 @@ class _Etiqueta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      texto.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 1.2,
-        color: AppColors.textMuted,
-      ),
-    );
+    return Text(texto, style: AppTexto.subtitulo.copyWith(fontSize: 15));
   }
 }
 
-/// Superficie base: rectángulo blanco con borde de 1 px, sin sombra ni
-/// esquinas redondeadas — el estilo *flat* del design system.
+/// Superficie base: tarjeta blanca con borde fino y el radio del sistema, sin
+/// sombra.
 class _Panel extends StatelessWidget {
   const _Panel({
     required this.child,
@@ -356,9 +366,10 @@ class _Panel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(AppEspacio.md),
       decoration: BoxDecoration(
         color: color,
+        borderRadius: AppForma.borde,
         border: Border.all(color: borderColor),
       ),
       child: child,

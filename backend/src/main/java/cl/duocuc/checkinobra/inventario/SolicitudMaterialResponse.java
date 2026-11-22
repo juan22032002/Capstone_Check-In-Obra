@@ -17,7 +17,9 @@ public record SolicitudMaterialResponse(
         String materialNombre,
         Long obraId,
         Long resueltoPorId,
-        String resueltoPorNombre) {
+        String resueltoPorNombre,
+        String descripcion,
+        LocalDateTime fechaRecepcion) {
 
     public static SolicitudMaterialResponse de(SolicitudMaterial s) {
         boolean resuelta = s.getResueltoPor() != null;
@@ -35,6 +37,8 @@ public record SolicitudMaterialResponse(
                 s.getMaterial().getNombre(),
                 s.getObra().getId(),
                 resuelta ? s.getResueltoPor().getId() : null,
-                resuelta ? s.getResueltoPor().getNombre() : null);
+                resuelta ? s.getResueltoPor().getNombre() : null,
+                s.getDescripcion(),
+                s.getFechaRecepcion());
     }
 }

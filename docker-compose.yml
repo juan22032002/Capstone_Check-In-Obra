@@ -13,24 +13,69 @@ services:
     environment:
       # Host "db": nombre del servicio en la red interna de Compose, no localhost.
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/checkinobra
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      # La API conecta como checkinobra_app (solo DML) y Flyway como
+      # checkinobra_migrador (DDL). Ninguno es superusuario; los crea
+      # db/crear-roles.sh. Las contraseñas vienen del .env de la raíz, no versionado;
+      # scripts/levantar.sh las genera. Vacías a propósito: con ":?" compose fallaba
+      # hasta en "down" y "ps"; sin ellas la API no arranca y lo dice en el log.
+      SPRING_DATASOURCE_USERNAME: checkinobra_app
+      SPRING_DATASOURCE_PASSWORD: ${DB_APP_PASSWORD:-}
+      FLYWAY_USER: checkinobra_migrador
+      FLYWAY_PASSWORD: ${DB_MIGRADOR_PASSWORD:-}
+      # Base de catálogo (MT1): qué empresas existen y cómo conectarse a cada una. La
+      # API conecta como checkinobra_plataforma, que solo ve esa base; sus migraciones
+      # las aplica el migrador.
+      CATALOGO_URL: jdbc:postgresql://db:5432/checkinobra_catalogo
+      CATALOGO_USER: checkinobra_plataforma
+      CATALOGO_PASSWORD: ${DB_PLATAFORMA_PASSWORD:-}
+      # Alta de empresas por API (MT7): crea la base y el usuario de cada constructora. Credencial
+      # aparte de la de la API y la del migrador. Sin ella el alta por API no está disponible.
+      DB_APROVISIONADOR_PASSWORD: ${DB_APROVISIONADOR_PASSWORD:-}
+      # Contraseñas de las bases que crea la API (referencias file: del catálogo): volumen persistente.
+      SECRETOS_DIR: /secretos
+      # Sin valor por defecto: la API no arranca sin un secreto propio (JwtService
+      # lo valida y dice qué hacer en el log). Se lee del .env de la raíz, no
+      # versionado; scripts/levantar.sh lo genera. A mano: openssl rand -base64 48
+      # Vacío permitido a propósito: con ":?" compose fallaba hasta en "down" y "ps".
+      JWT_SECRET: ${JWT_SECRET:-}
+      # Clave inicial del administrador (SEG3): sin ella nadie puede entrar como
+      # admin, porque la migración V11 anuló el PIN 0000 que sembraba V2. La cuenta
+      # queda obligada a cambiarla en su primer ingreso. scripts/levantar.sh la genera.
+      PRIMER_ADMIN_CLAVE: ${PRIMER_ADMIN_CLAVE:-}
+      # Hora de Chile, la misma de la app y de ./mvnw test. La API recibe y
+      # devuelve fechas sin zona; en UTC, "hoy 18:00" llegaba como pasada.
+      TZ: America/Santiago
+    volumes:
+      - secretos:/secretos
     depends_on:
       db:
         condition: service_healthy
 
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:1d5b02d3a9941fbd52437db4107f8c52d6297dac553ca1e5c299ebb3756b4857
     environment:
       POSTGRES_DB: checkinobra
-      POSTGRES_PASSWORD: postgres
+      # Superusuario: solo para administrar. La API no lo usa. Sin valor por
+      # defecto: Postgres se niega a inicializar un volumen nuevo sin contraseña.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      CHECKINOBRA_APP_PASSWORD: ${DB_APP_PASSWORD:-}
+      CHECKINOBRA_MIGRADOR_PASSWORD: ${DB_MIGRADOR_PASSWORD:-}
+      CHECKINOBRA_PLATAFORMA_PASSWORD: ${DB_PLATAFORMA_PASSWORD:-}
+      CHECKINOBRA_APROVISIONADOR_PASSWORD: ${DB_APROVISIONADOR_PASSWORD:-}
+      ROLES_SQL: /opt/checkinobra/roles.sql
     # 5433 en el host para no chocar con otro Postgres local.
     # Solo hace falta para conectarse desde fuera de Docker (DBeaver, psql,
     # o correr el backend desde el IDE); entre contenedores se usa db:5432.
+    # Solo en 127.0.0.1: publicado en todas las interfaces, cualquiera en la misma
+    # red WiFi llegaba a la base (S-07).
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Crea los roles al inicializar un volumen nuevo. En uno que ya existía no
+      # corre solo: docker compose exec -T db /docker-entrypoint-initdb.d/01-roles.sh
+      - ./db/crear-roles.sh:/docker-entrypoint-initdb.d/01-roles.sh:ro
+      - ./db/roles.sql:/opt/checkinobra/roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d checkinobra"]
       interval: 5s
@@ -39,3 +84,4 @@ services:
 
 volumes:
   pgdata:
+  secretos:

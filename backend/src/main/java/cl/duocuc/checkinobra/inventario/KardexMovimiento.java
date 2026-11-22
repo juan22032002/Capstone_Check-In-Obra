@@ -22,6 +22,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 /**
@@ -75,10 +77,29 @@ public class KardexMovimiento implements PerteneceAEmpresa {
     @JoinColumn(name = "trabajador_id")
     private Trabajador trabajador;
 
+    /**
+     * Lo que se pagó por unidad en esta compra, según la factura. Solo existe en
+     * una RECEPCION, y aun ahí es opcional. No es el precio de catálogo del
+     * material: ese lo fija el administrador y alimenta el presupuesto; este es
+     * el costo real, y de él salen el último costo y el promedio ponderado.
+     */
+    @Column(name = "costo_unitario", precision = 14, scale = 2)
+    private BigDecimal costoUnitario;
+
     /** KardexMovimiento.registrar() del diagrama — valida y sella la fecha. */
     public void registrar() {
         if (cantidad <= 0) {
             throw new IllegalStateException("La cantidad de un movimiento debe ser mayor a 0");
+        }
+        if (costoUnitario != null) {
+            if (tipoMovimiento != TipoMovimiento.RECEPCION) {
+                throw new IllegalArgumentException(
+                        "El costo unitario solo se registra en una recepción: el material ya está pagado");
+            }
+            if (costoUnitario.signum() <= 0) {
+                throw new IllegalArgumentException("El costo unitario debe ser mayor a 0");
+            }
+            this.costoUnitario = costoUnitario.setScale(2, RoundingMode.HALF_UP);
         }
         if (this.fecha == null) {
             this.fecha = LocalDateTime.now();

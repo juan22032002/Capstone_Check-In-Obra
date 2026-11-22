@@ -16,7 +16,7 @@ class Trabajador {
   final String nombre;
   final int? cuadrillaId;
 
-  /// "Marcelo Sepúlveda · 17.930.556-4", que es como se identifica a alguien
+  /// "Marcelo Sepúlveda · 17.930.556-9", que es como se identifica a alguien
   /// en obra cuando hay dos con el mismo nombre de pila.
   String get identificacion => rut == null ? nombre : '$nombre · $rut';
 

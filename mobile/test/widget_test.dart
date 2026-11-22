@@ -48,6 +48,7 @@ void main() {
     test('guarda los datos mínimos para el acceso por PIN', () {
       const u = UsuarioRecordado(
         usuarioId: 3,
+        empresaId: 1,
         nombre: 'Marcelo Sepúlveda',
         rol: 'TRABAJADOR',
       );

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/errores.dart';
+import '../../core/politica_clave.dart';
 import '../../core/storage/sesion_storage.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_forma.dart';
 import '../../shared_widgets/panel.dart';
+import '../../shared_widgets/presion.dart';
 import 'sesion_controller.dart';
 
 /// Acceso rápido con PIN para el usuario que el teléfono ya recuerda.
@@ -31,7 +34,11 @@ class _PantallaAccesoPinState extends ConsumerState<PantallaAccesoPin> {
       if (!mounted) return;
       await ref
           .read(sesionProvider.notifier)
-          .entrarConPin(usuarioId: usuario.usuarioId, pin: _pin);
+          .entrarConPin(
+            usuarioId: usuario.usuarioId,
+            empresaId: usuario.empresaId,
+            pin: _pin,
+          );
       // Si falló, se limpia para reintentar.
       if (mounted && ref.read(sesionProvider).hasError) {
         setState(() => _pin = '');
@@ -49,93 +56,113 @@ class _PantallaAccesoPinState extends ConsumerState<PantallaAccesoPin> {
     final sesion = ref.watch(sesionProvider);
     final recordadoAsync = ref.watch(usuarioRecordadoProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.primary,
-      body: recordadoAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator(color: Colors.white)),
-        error: (e, _) => Center(
-          child: Text(
-            mensajeDeError(e),
-            style: const TextStyle(color: Colors.white),
+    // Sin `AppBar`, Android pinta su propio fondo bajo la barra de estado y
+    // quedaba una franja más oscura sobre el marco. Transparente y con íconos
+    // claros, el marco llega hasta arriba.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
+      child: Scaffold(
+        backgroundColor: AppColors.surfaceDark,
+        body: recordadoAsync.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: Colors.white),
           ),
-        ),
-        data: (usuario) {
-          if (usuario == null) {
-            // Sin usuario recordado no hay a quién autenticar: se vuelve.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) Navigator.of(context).maybePop();
-            });
-            return const SizedBox.shrink();
-          }
-          return Column(
-            children: [
-              _Encabezado(usuario: usuario),
-              Expanded(
-                child: Container(
-                  width: double.infinity,
-                  color: Colors.white,
-                  child: SafeArea(
-                    top: false,
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-                      child: Column(
-                        children: [
-                          _Titulo(
-                            error: sesion.hasError
-                                ? mensajeDeError(sesion.error!)
-                                : null,
-                            cargando: sesion.isLoading,
-                          ),
-                          const SizedBox(height: 14),
-                          _Puntos(
-                            cantidad: _pin.length,
-                            error: sesion.hasError,
-                          ),
-                          const SizedBox(height: 22),
-                          _Teclado(
-                            habilitado: !sesion.isLoading,
-                            alPulsar: (d) => _tecla(d, usuario),
-                            alLimpiar: () => setState(() => _pin = ''),
-                            alBorrar: _borrar,
-                          ),
-                          const SizedBox(height: 18),
-                          const Panel(
-                            color: AppColors.background,
-                            padding: EdgeInsets.all(12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  Icons.lock_outline,
-                                  size: 19,
-                                  color: AppColors.secondary,
-                                ),
-                                SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'El PIN no se guarda en el teléfono. Si lo '
-                                    'olvidaste, lo restablece el administrador '
-                                    'de la empresa.',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      height: 1.4,
-                                      color: AppColors.textMuted,
+          error: (e, _) => Center(
+            child: Text(
+              mensajeDeError(e),
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+          data: (usuario) {
+            if (usuario == null || !PoliticaClave.esPin(usuario.rol)) {
+              // Sin usuario recordado, o con uno que no es trabajador (el
+              // backend solo acepta `login-pin` para ese rol), no hay a quién
+              // autenticar por PIN: se vuelve.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) Navigator.of(context).maybePop();
+              });
+              return const SizedBox.shrink();
+            }
+            return Column(
+              children: [
+                _Encabezado(usuario: usuario),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: const BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: AppForma.bordeHoja,
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppEspacio.lg,
+                          AppEspacio.xl,
+                          AppEspacio.lg,
+                          AppEspacio.lg,
+                        ),
+                        child: Column(
+                          children: [
+                            _Titulo(
+                              error: sesion.hasError
+                                  ? mensajeDeError(sesion.error!)
+                                  : null,
+                              cargando: sesion.isLoading,
+                            ),
+                            const SizedBox(height: AppEspacio.md + 4),
+                            _Puntos(
+                              cantidad: _pin.length,
+                              error: sesion.hasError,
+                            ),
+                            const SizedBox(height: AppEspacio.xl),
+                            _Teclado(
+                              habilitado: !sesion.isLoading,
+                              alPulsar: (d) => _tecla(d, usuario),
+                              alLimpiar: () => setState(() => _pin = ''),
+                              alBorrar: _borrar,
+                            ),
+                            const SizedBox(height: AppEspacio.lg),
+                            const Panel(
+                              color: AppColors.background,
+                              padding: EdgeInsets.all(AppEspacio.md),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.lock_outline,
+                                    size: 19,
+                                    color: AppColors.secondary,
+                                  ),
+                                  SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'El PIN no se guarda en el teléfono. Si lo '
+                                      'olvidaste, lo restablece el administrador '
+                                      'de la empresa.',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        height: 1.45,
+                                        color: AppColors.textMuted,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -179,13 +206,16 @@ class _Encabezado extends ConsumerWidget {
               child: Panel(
                 color: AppColors.surfaceDark,
                 borderColor: AppColors.borderOnDark,
-                padding: const EdgeInsets.all(13),
+                padding: const EdgeInsets.all(AppEspacio.md),
                 child: Row(
                   children: [
                     Container(
-                      width: 42,
-                      height: 42,
-                      color: const Color(0xFF475569),
+                      width: 44,
+                      height: 44,
+                      decoration: const BoxDecoration(
+                        color: AppColors.borderOnDark,
+                        borderRadius: AppForma.borde,
+                      ),
                       alignment: Alignment.center,
                       child: Text(
                         Iniciales.de(usuario.nombre),
@@ -211,12 +241,10 @@ class _Encabezado extends ConsumerWidget {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            nombreDeRol(usuario.rol).toUpperCase(),
+                            nombreDeRol(usuario.rol),
                             style: const TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.6,
-                              color: AppColors.textFaint,
+                              fontSize: 13,
+                              color: AppColors.textOnDarkMuted,
                             ),
                           ),
                         ],
@@ -232,8 +260,9 @@ class _Encabezado extends ConsumerWidget {
                       child: const Text(
                         'Cambiar',
                         style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFFFDBA74),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.accentOnDark,
                         ),
                       ),
                     ),
@@ -365,9 +394,9 @@ class _Teclado extends StatelessWidget {
               child: Text(
                 d,
                 style: const TextStyle(
-                  fontFamily: AppTheme.monoFamily,
-                  fontSize: 25,
+                  fontSize: 26,
                   fontWeight: FontWeight.w500,
+                  letterSpacing: -0.3,
                   color: AppColors.primary,
                 ),
               ),
@@ -377,11 +406,11 @@ class _Teclado extends StatelessWidget {
             conFondo: false,
             onTap: habilitado ? alLimpiar : null,
             child: const Text(
-              'LIMPIAR',
+              'Limpiar',
               style: TextStyle(
-                fontSize: 12.5,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: AppColors.secondary,
+                color: AppColors.textMuted,
               ),
             ),
           ),
@@ -391,9 +420,9 @@ class _Teclado extends StatelessWidget {
             child: const Text(
               '0',
               style: TextStyle(
-                fontFamily: AppTheme.monoFamily,
-                fontSize: 25,
+                fontSize: 26,
                 fontWeight: FontWeight.w500,
+                letterSpacing: -0.3,
                 color: AppColors.primary,
               ),
             ),
@@ -443,20 +472,27 @@ class _Tecla extends StatelessWidget {
       enabled: onTap != null,
       label: semanticLabel,
       excludeSemantics: true,
-      child: Material(
-        color: conFondo ? AppColors.background : Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            alignment: Alignment.center,
-            decoration: conFondo
-                ? const BoxDecoration(
-                    border: Border.fromBorderSide(
-                      BorderSide(color: AppColors.borderControl),
-                    ),
-                  )
-                : null,
-            child: child,
+      child: Presionable(
+        habilitado: onTap != null,
+        child: Material(
+          color: conFondo ? AppColors.background : Colors.transparent,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: AppForma.borde,
+            side: conFondo
+                ? const BorderSide(color: AppColors.borderControl)
+                : BorderSide.none,
+          ),
+          child: InkWell(
+            // Un pulso por tecla: con guantes, es la confirmación de que el
+            // dígito entró aunque no se mire la fila de puntos.
+            onTap: onTap == null
+                ? null
+                : () {
+                    HapticFeedback.selectionClick();
+                    onTap!();
+                  },
+            child: Center(child: child),
           ),
         ),
       ),

@@ -17,6 +17,7 @@ public class EmpresaService {
     }
 
     public Empresa crear(String nombre, String rut) {
+        rut = Rut.normalizar(rut);
         if (empresaRepository.existsByRut(rut)) {
             throw new IllegalStateException("Ya existe una empresa con ese RUT");
         }

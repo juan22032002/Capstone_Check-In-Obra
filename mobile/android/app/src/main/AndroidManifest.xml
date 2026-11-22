@@ -1,8 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- La cámara es el escáner del bodeguero: lee la credencial QR del
+         trabajador para resolver sus solicitudes, y el código de barras de un
+         material o una herramienta para encontrarlo sin buscarlo en la lista.
+         `mobile_scanner` ya declara el permiso, pero se repite acá para que
+         quien lea este manifiesto sepa por qué la app pide cámara. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- La app es un cliente de la API: sin INTERNET en el manifiesto principal
+         dependería de que el de debug lo declare, y un release no lo haría
+         (hallazgo S-32). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="Check-In Obra"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

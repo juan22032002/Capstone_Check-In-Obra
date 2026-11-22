@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sin tráfico en claro: el JWT y el PIN viajan en cada petición y por HTTP
+     quedan visibles para cualquiera en la misma WiFi (hallazgo S-10).
+     Las compilaciones de debug lo reemplazan con
+     src/debug/res/xml/network_security_config.xml, que abre solo el acceso al
+     computador de desarrollo. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

@@ -4,5 +4,7 @@ public enum EstadoSolicitud {
     PENDIENTE,
     APROBADA,
     RECHAZADA,
-    ENTREGADA
+    ENTREGADA,
+    /** La retiró el mismo trabajador mientras seguía pendiente. */
+    CANCELADA
 }

@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_forma.dart';
+import '../core/theme/app_theme.dart';
+import '../core/theme/movimiento.dart';
+import 'presion.dart';
 
-/// Superficie base del sistema: rectángulo con borde de 1 px, sin sombra ni
-/// esquinas redondeadas. Es el estilo *flat* que define el design system.
+/// Superficie base del sistema: tarjeta blanca con borde fino y radio 12, sin
+/// sombra. Sobre el lienzo claro, el borde basta para separarla.
 class Panel extends StatelessWidget {
   const Panel({
     super.key,
     required this.child,
     this.color = AppColors.card,
     this.borderColor = AppColors.border,
-    this.padding = const EdgeInsets.all(14),
+    this.padding = const EdgeInsets.all(AppEspacio.md),
     this.borderIzquierdo,
+    this.animado = false,
   });
 
   final Widget child;
@@ -19,38 +24,68 @@ class Panel extends StatelessWidget {
   final Color borderColor;
   final EdgeInsets padding;
 
+  /// Funde el color y el borde cuando cambian, en vez de saltar. Para los
+  /// paneles que cambian de estado mientras se miran —el saldo que pasa a
+  /// ámbar y a rojo según lo que se escribe—; en una lista estática sobra.
+  final bool animado;
+
   /// Franja de color a la izquierda, para marcar criticidad en listas
   /// (rojo = vencido, ámbar = por vencer, verde = al día).
+  ///
+  /// Es un elemento interno y no un borde: Flutter no dibuja un `Border` con
+  /// un lado distinto cuando hay radio, y la tarjeta recorta la franja con su
+  /// propia esquina, así que sigue la curva.
   final Color? borderIzquierdo;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: color,
-        border: Border(
-          top: BorderSide(color: borderColor),
-          right: BorderSide(color: borderColor),
-          bottom: BorderSide(color: borderColor),
-          left: borderIzquierdo != null
-              ? BorderSide(color: borderIzquierdo!, width: 3)
-              : BorderSide(color: borderColor),
-        ),
-      ),
-      child: child,
+    final decoracion = BoxDecoration(
+      color: color,
+      borderRadius: AppForma.borde,
+      border: Border.all(color: borderColor),
+    );
+
+    final contenido = Padding(padding: padding, child: child);
+    final franja = borderIzquierdo;
+    final cuerpo = franja == null
+        ? contenido
+        : Stack(
+            children: [
+              contenido,
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 4,
+                child: ColoredBox(color: franja),
+              ),
+            ],
+          );
+
+    if (!animado) {
+      return Container(
+        decoration: decoracion,
+        clipBehavior: Clip.antiAlias,
+        child: cuerpo,
+      );
+    }
+    return AnimatedContainer(
+      duration: Movimiento.de(context, Movimiento.estado),
+      curve: Movimiento.salida,
+      decoration: decoracion,
+      clipBehavior: Clip.antiAlias,
+      child: cuerpo,
     );
   }
 }
 
-/// Panel que se toca. No es `InkWell(child: Panel(...))`: ese envoltorio
-/// parece funcionar pero no da ninguna respuesta al tacto, porque el
-/// `Container` opaco del `Panel` se dibuja *encima* del splash y lo tapa. El
-/// dedo aprieta y no pasa nada visible — que en obra se lee como "la app se
-/// colgó" y termina en un segundo toque, es decir, la acción repetida.
+/// Panel que se toca.
 ///
-/// El orden correcto es `Material` (pone el color y recibe el splash) →
-/// `InkWell` → contenido con fondo transparente.
+/// El color, el borde y el recorte los pone el `Material`, y el `InkWell` va
+/// adentro: así el splash se dibuja sobre el fondo y queda recortado por la
+/// esquina. Con `InkWell(child: Panel(...))` el fondo opaco del panel tapaba el
+/// splash y el dedo apretaba sin respuesta visible, que en obra termina en un
+/// segundo toque, es decir, en la acción repetida.
 class PanelTocable extends StatelessWidget {
   const PanelTocable({
     super.key,
@@ -59,11 +94,15 @@ class PanelTocable extends StatelessWidget {
     required this.semanticLabel,
     this.color = AppColors.card,
     this.borderColor = AppColors.borderControl,
-    this.padding = const EdgeInsets.all(14),
+    this.padding = const EdgeInsets.all(AppEspacio.md),
+    this.borderIzquierdo,
   });
 
   final Widget child;
   final VoidCallback? onTap;
+
+  /// La misma franja de criticidad que `Panel.borderIzquierdo`.
+  final Color? borderIzquierdo;
 
   /// Lo que anuncia el lector de pantalla. Obligatorio: un panel entero
   /// tocable no se describe solo.
@@ -79,16 +118,33 @@ class PanelTocable extends StatelessWidget {
       button: true,
       enabled: onTap != null,
       label: semanticLabel,
-      child: Material(
-        color: color,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              border: Border.fromBorderSide(BorderSide(color: borderColor)),
+      child: Presionable(
+        habilitado: onTap != null,
+        child: Material(
+          color: color,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: AppForma.borde,
+            side: BorderSide(color: borderColor),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            child: Stack(
+              children: [
+                Padding(
+                  padding: padding,
+                  child: ExcludeSemantics(child: child),
+                ),
+                if (borderIzquierdo case final franja?)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 4,
+                    child: ColoredBox(color: franja),
+                  ),
+              ],
             ),
-            child: ExcludeSemantics(child: child),
           ),
         ),
       ),
@@ -96,22 +152,21 @@ class PanelTocable extends StatelessWidget {
   }
 }
 
-/// Rótulo de sección: mayúsculas, pequeño y espaciado.
+/// Título de sección: en tipo oración y con peso, no en mayúsculas espaciadas.
+/// Ordena la pantalla por bloques sin gritar.
 class Etiqueta extends StatelessWidget {
-  const Etiqueta(this.texto, {super.key, this.color = AppColors.textMuted});
+  const Etiqueta(this.texto, {super.key, this.color = AppColors.primary});
 
   final String texto;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      texto.toUpperCase(),
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 1.2,
-        color: color,
+    return Semantics(
+      header: true,
+      child: Text(
+        texto,
+        style: AppTexto.subtitulo.copyWith(fontSize: 15, color: color),
       ),
     );
   }
@@ -156,7 +211,7 @@ class ChipEstado extends StatelessWidget {
   /// Gris — neutro, entregada, cerrada.
   factory ChipEstado.neutro(String texto) => ChipEstado(
     texto: texto,
-    fondo: const Color(0xFFF1F5F9),
+    fondo: AppColors.sunken,
     textoColor: AppColors.textMuted,
   );
 
@@ -167,34 +222,38 @@ class ChipEstado extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // El design system exige que el chip no quiebre línea. A 10 px, con el
-    // texto del sistema al 200 %, "SIN CONEXIÓN" en una sola línea desborda
-    // la fila que lo contiene. Se topa el escalado del chip —y solo del
-    // chip— en 1.3: sigue creciendo con la preferencia del usuario, pero
-    // dentro de lo que la fila aguanta.
+    // El chip no quiebra línea. Con el texto del sistema al 200 %, un chip
+    // largo desborda la fila que lo contiene, así que se topa el escalado del
+    // chip —y solo del chip— en 1.15. Parece poco, pero parte de 12 px: al
+    // máximo queda en 13,8, más grande que el chip anterior de 10 px con su
+    // tope de 1.3 (13 px).
     return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.3,
+      maxScaleFactor: 1.15,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        color: fondo,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: fondo,
+          borderRadius: AppForma.bordeChip,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (punto != null) ...[
               Container(
-                width: 5,
-                height: 5,
+                width: 6,
+                height: 6,
                 decoration: BoxDecoration(color: punto, shape: BoxShape.circle),
               ),
               const SizedBox(width: 6),
             ],
             Text(
-              texto.toUpperCase(),
-              // El chip nunca quiebra línea: el ancho se adapta al texto.
+              texto,
               softWrap: false,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                height: 1.3,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.1,
                 color: textoColor,
               ),
             ),
@@ -234,7 +293,10 @@ class Iniciales extends StatelessWidget {
     return Container(
       width: tamano,
       height: tamano,
-      color: AppColors.primary,
+      decoration: const BoxDecoration(
+        color: AppColors.sunken,
+        borderRadius: AppForma.borde,
+      ),
       alignment: Alignment.center,
       child: ExcludeSemantics(
         // El cuadro tiene lado fijo, así que el texto no puede escalar sin
@@ -243,9 +305,10 @@ class Iniciales extends StatelessWidget {
           child: Text(
             de(nombre),
             style: TextStyle(
-              fontSize: tamano * 0.32,
+              fontSize: tamano * 0.34,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              letterSpacing: -0.3,
+              color: AppColors.primary,
             ),
           ),
         ),

@@ -1,5 +1,6 @@
 package cl.duocuc.checkinobra.inventario;
 
+import cl.duocuc.checkinobra.config.ConflictoException;
 import cl.duocuc.checkinobra.config.PerteneceAEmpresa;
 import cl.duocuc.checkinobra.config.Usuario;
 import cl.duocuc.checkinobra.obra.Obra;
@@ -70,7 +71,7 @@ public class PrestamoHerramienta implements PerteneceAEmpresa {
     /** PrestamoHerramienta.registrarDevolucion() del diagrama. */
     public void registrarDevolucion() {
         if (this.fechaDevolReal != null) {
-            throw new IllegalStateException("Este préstamo ya fue devuelto");
+            throw new ConflictoException(ConflictoException.YA_DEVUELTO, "Este préstamo ya fue devuelto");
         }
         this.fechaDevolReal = LocalDateTime.now();
     }

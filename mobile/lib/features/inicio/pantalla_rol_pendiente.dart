@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_forma.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/api/auth_api.dart';
 import '../../shared_widgets/panel.dart';
@@ -9,8 +10,8 @@ import '../auth/sesion_controller.dart';
 
 /// Lo que ve un rol cuyo flujo todavía no está construido.
 ///
-/// Hoy son el jefe de terreno y el trabajador. Bodeguero y administrador
-/// tienen su propio shell (`ShellBodega`, `ShellAdmin`), y el enrutado de
+/// Hoy es el jefe de terreno. Bodeguero, administrador y trabajador tienen su
+/// propio shell (`ShellBodega`, `ShellAdmin`, `ShellTrabajador`), y el enrutado de
 /// `main.dart` los manda ahí; quien caiga acá es porque su flujo está
 /// pendiente.
 ///
@@ -32,20 +33,10 @@ class PantallaRolPendiente extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              nombreDeRol(sesion.rol).toUpperCase(),
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.2,
-                // Sobre el azul de la barra, `textFaint` medía 4:1 y no
-                // llegaba al 4.5:1 que pide el design system.
-                color: AppColors.textOnDark,
-              ),
+              nombreDeRol(sesion.rol),
+              style: AppTexto.dato.copyWith(color: AppColors.secondary),
             ),
-            Text(
-              sesion.nombre,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
+            Text(sesion.nombre, style: AppTexto.titulo.copyWith(fontSize: 19)),
           ],
         ),
         actions: [
@@ -85,14 +76,14 @@ class PantallaRolPendiente extends ConsumerWidget {
                             'Empresa #${sesion.empresaId} · usuario #${sesion.usuarioId}',
                             style: const TextStyle(
                               fontFamily: AppTheme.monoFamily,
-                              fontSize: 11.5,
+                              fontSize: 12.5,
                               color: AppColors.secondary,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    ChipEstado.neutro(sesion.rol),
+                    ChipEstado.neutro(nombreDeRol(sesion.rol)),
                   ],
                 ),
               ),
@@ -113,8 +104,8 @@ class PantallaRolPendiente extends ConsumerWidget {
                               : null,
                         ),
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 13,
+                          horizontal: AppEspacio.md,
+                          vertical: AppEspacio.sm + 6,
                         ),
                         child: Row(
                           children: [
@@ -169,7 +160,7 @@ class PantallaRolPendiente extends ConsumerWidget {
                             style: TextStyle(
                               fontSize: 12.5,
                               height: 1.4,
-                              color: Color(0xFF92400E),
+                              color: AppColors.warningInk,
                             ),
                           ),
                         ),
@@ -181,7 +172,7 @@ class PantallaRolPendiente extends ConsumerWidget {
                       style: const TextStyle(
                         fontSize: 12.5,
                         height: 1.4,
-                        color: Color(0xFF92400E),
+                        color: AppColors.warningInk,
                       ),
                     ),
                   ],

@@ -120,11 +120,7 @@ class _FilaObra extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 10),
-          const Icon(
-            Icons.chevron_right,
-            size: 22,
-            color: AppColors.accentFill,
-          ),
+          const Icon(Icons.chevron_right, size: 22, color: AppColors.secondary),
         ],
       ),
     );

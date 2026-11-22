@@ -27,6 +27,11 @@ public class PartidaService {
     }
 
     public Partida crear(Long obraId, TipoPartida tipo, double anchoM, double altoM, double separacionMontantes) {
+        // Antes de tocar la base: con separación 0 el motor de cubicación divide
+        // por cero y los montantes salen Infinity (S-18).
+        exigirPositiva(anchoM, "El ancho");
+        exigirPositiva(altoM, "El alto");
+        exigirPositiva(separacionMontantes, "La separación de montantes");
         Obra obra = obraService.obtener(obraId);
         Partida partida = Partida.builder()
                 .tipo(tipo)
@@ -36,6 +41,12 @@ public class PartidaService {
                 .obra(obra)
                 .build();
         return partidaRepository.save(partida);
+    }
+
+    private static void exigirPositiva(double valor, String nombre) {
+        if (!Double.isFinite(valor) || valor <= 0) {
+            throw new IllegalArgumentException(nombre + " debe ser un número mayor que 0");
+        }
     }
 
     @Transactional(readOnly = true)

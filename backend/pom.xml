@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.1.1</version>
+		<version>4.1.2</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>cl.duocuc</groupId>
@@ -40,7 +40,7 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-mail</artifactId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -89,11 +89,18 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<!-- Apache POI — lee y escribe las planillas .xlsx de la importación masiva -->
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>5.4.1</version>
+		</dependency>
+
 		<!-- Swagger / OpenAPI — tampoco está en Spring Initializr, se agrega a mano -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>2.8.6</version>
+			<version>3.2.0</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -103,11 +110,6 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-flyway-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-mail-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -132,6 +134,24 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<systemPropertyVariables>
+						<!-- La suite comparte una sola base entre muchas empresas de prueba: usa su propio
+						     resolutor (ConexionCompartidaParaPruebas) y valida el mapeo contra ella. -->
+						<checkinobra.pruebas.conexion-compartida>true</checkinobra.pruebas.conexion-compartida>
+						<spring.jpa.hibernate.ddl-auto>validate</spring.jpa.hibernate.ddl-auto>
+						<spring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access>true</spring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access>
+					</systemPropertyVariables>
+					<environmentVariables>
+						<!-- La API no arranca sin JWT_SECRET (SEG1). Este valor es solo de pruebas:
+						     no firma nada fuera de ./mvnw test y de la CI. -->
+						<JWT_SECRET>solo-para-pruebas-no-usar-fuera-de-mvn-test-0123456789</JWT_SECRET>
+					</environmentVariables>
+				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

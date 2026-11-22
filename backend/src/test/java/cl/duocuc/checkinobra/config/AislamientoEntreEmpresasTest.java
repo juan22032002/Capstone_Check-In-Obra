@@ -154,6 +154,12 @@ class AislamientoEntreEmpresasTest {
                 if (!anidada.isRecord() || !anidada.getSimpleName().endsWith("Request")) {
                     continue;
                 }
+                // La única excepción es el login por PIN: antes de autenticarse no hay token de
+                // donde sacar la empresa, y los ids de usuario se repiten entre bases. Se
+                // valida contra el catálogo y no abre otra base que la que ese usuario tiene.
+                if (anidada.getSimpleName().equals("LoginPorPinRequest")) {
+                    continue;
+                }
                 assertThat(anidada.getRecordComponents())
                         .as("%s", anidada.getSimpleName())
                         .extracting(java.lang.reflect.RecordComponent::getName)

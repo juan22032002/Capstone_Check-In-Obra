@@ -7,7 +7,9 @@ import org.springframework.context.annotation.ClassPathScanningCandidateComponen
 import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.core.type.filter.RegexPatternTypeFilter;
 
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -70,16 +72,42 @@ class RespuestasNoExponenEntidadesTest {
                     .as("%s debería ser un record", respuesta.getSimpleName())
                     .isTrue();
 
-            for (RecordComponent componente : respuesta.getRecordComponents()) {
-                Class<?> tipo = componente.getType();
-                if (tipo.isEnum() || TIPOS_PERMITIDOS.contains(tipo)) {
-                    continue;
-                }
-                fail("%s.%s es de tipo %s. Una respuesta solo lleva escalares, texto y fechas: "
-                                + "aplana la relación a su id y, si hace falta para leerla, su nombre.",
-                        respuesta.getSimpleName(), componente.getName(), tipo.getSimpleName());
+            revisarComponentes(respuesta);
+        }
+    }
+
+    /**
+     * Una respuesta agregada —la ficha de una obra— puede agrupar sus partes en
+     * records anidados y en listas de ellos. Se permite solo si cada parte, a su
+     * vez, cumple la misma regla: agrupar no puede ser la puerta para volver a
+     * mandar una entidad.
+     */
+    private void revisarComponentes(Class<?> record) {
+        for (RecordComponent componente : record.getRecordComponents()) {
+            Type tipo = componente.getGenericType();
+            if (tipo instanceof ParameterizedType lista && lista.getRawType() == List.class
+                    && lista.getActualTypeArguments()[0] instanceof Class<?> elemento) {
+                revisarTipo(record, componente, elemento);
+            } else if (tipo instanceof Class<?> clase) {
+                revisarTipo(record, componente, clase);
+            } else {
+                fail("%s.%s es de tipo %s, que no se puede revisar.",
+                        record.getSimpleName(), componente.getName(), tipo.getTypeName());
             }
         }
+    }
+
+    private void revisarTipo(Class<?> record, RecordComponent componente, Class<?> tipo) {
+        if (tipo.isEnum() || TIPOS_PERMITIDOS.contains(tipo)) {
+            return;
+        }
+        if (tipo.isRecord() && !tipo.isAnnotationPresent(Entity.class)) {
+            revisarComponentes(tipo);
+            return;
+        }
+        fail("%s.%s es de tipo %s. Una respuesta solo lleva escalares, texto y fechas: "
+                        + "aplana la relación a su id y, si hace falta para leerla, su nombre.",
+                record.getSimpleName(), componente.getName(), tipo.getSimpleName());
     }
 
     @Test

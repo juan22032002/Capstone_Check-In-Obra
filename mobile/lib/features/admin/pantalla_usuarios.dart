@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/formato.dart';
+import '../../core/politica_clave.dart';
 import '../../core/network/errores.dart';
+import '../../core/network/idempotencia.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/api/dominio_api.dart';
@@ -10,6 +13,7 @@ import '../../data/modelos/usuario.dart';
 import '../../shared_widgets/campo_texto.dart';
 import '../../shared_widgets/estados.dart';
 import '../../shared_widgets/panel.dart';
+import '../../shared_widgets/presion.dart';
 import '../auth/sesion_controller.dart';
 
 final usuariosProvider = FutureProvider<List<UsuarioEmpresa>>(
@@ -45,7 +49,7 @@ class PantallaUsuarios extends ConsumerWidget {
               children: [
                 for (final rol in orden)
                   if (porRol[rol] case final delRol?) ...[
-                    Etiqueta('${nombreDeRol(rol)} · ${delRol.length}'),
+                    Etiqueta('${nombreDeRol(rol)} (${delRol.length})'),
                     const SizedBox(height: 8),
                     for (final u in delRol) ...[
                       _FilaUsuario(usuario: u),
@@ -65,7 +69,6 @@ class PantallaUsuarios extends ConsumerWidget {
         ).push(MaterialPageRoute(builder: (_) => const PantallaNuevoUsuario())),
         backgroundColor: AppColors.accentFill,
         foregroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         icon: const Icon(Icons.person_add_alt),
         label: const Text('Nuevo usuario'),
       ),
@@ -87,55 +90,26 @@ class _FilaUsuarioState extends ConsumerState<_FilaUsuario> {
   /// el PIN no se puede consultar —solo se guarda su hash— así que cuando
   /// alguien lo olvida, no hay nada que recuperar, solo que reemplazar.
   Future<void> _restablecerPin() async {
-    final controlador = TextEditingController();
     final nuevo = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-        title: Text('PIN de ${widget.usuario.nombre}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'El PIN anterior no se puede recuperar: el sistema solo guarda '
-              'su huella. Define uno nuevo y entrégaselo en persona.',
-              style: TextStyle(fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            CampoTexto(
-              controlador: controlador,
-              hint: '••••',
-              icono: Icons.lock_outline,
-              mono: true,
-              maxLength: 4,
-              teclado: TextInputType.number,
-              formatters: [FilteringTextInputFormatter.digitsOnly],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controlador.text),
-            style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-            child: const Text('Restablecer'),
-          ),
-        ],
-      ),
+      builder: (_) =>
+          _DialogoPin(nombre: widget.usuario.nombre, rol: widget.usuario.rol),
     );
-    controlador.dispose();
 
-    if (nuevo == null || nuevo.length != 4) return;
+    if (nuevo == null || !mounted) return;
     try {
       await ref
           .read(usuariosApiProvider)
           .redefinirPin(widget.usuario.id, nuevo);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('PIN restablecido')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${PoliticaClave.esPin(widget.usuario.rol) ? 'PIN' : 'Clave'} '
+            'restablecido',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -179,7 +153,7 @@ class _FilaUsuarioState extends ConsumerState<_FilaUsuario> {
                   u.email,
                   style: const TextStyle(
                     fontFamily: AppTheme.monoFamily,
-                    fontSize: 11,
+                    fontSize: 12,
                     color: AppColors.secondary,
                   ),
                 ),
@@ -214,6 +188,7 @@ class _PantallaNuevoUsuarioState extends ConsumerState<PantallaNuevoUsuario> {
   String _rol = 'BODEGUERO';
   bool _enviando = false;
   String? _error;
+  final _intento = IntentoIdempotente();
 
   @override
   void dispose() {
@@ -225,6 +200,7 @@ class _PantallaNuevoUsuarioState extends ConsumerState<PantallaNuevoUsuario> {
   }
 
   Future<void> _guardar() async {
+    if (_enviando) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
     setState(() {
@@ -237,9 +213,16 @@ class _PantallaNuevoUsuarioState extends ConsumerState<PantallaNuevoUsuario> {
           .crear(
             nombre: _nombre.text.trim(),
             email: _email.text.trim(),
-            rut: _rut.text.trim(),
+            rut: Formato.rutCanonico(_rut.text),
             rol: _rol,
             pinInicial: _pin.text,
+            clave: _intento.clavePara([
+              _nombre.text.trim(),
+              _email.text.trim(),
+              Formato.rutCanonico(_rut.text),
+              _rol,
+              _pin.text,
+            ]),
           );
       ref.invalidate(usuariosProvider);
       if (!mounted) return;
@@ -247,7 +230,7 @@ class _PantallaNuevoUsuarioState extends ConsumerState<PantallaNuevoUsuario> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Usuario registrado')));
     } catch (e) {
-      setState(() => _error = mensajeDeError(e));
+      if (mounted) setState(() => _error = mensajeDeError(e));
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
@@ -299,13 +282,14 @@ class _PantallaNuevoUsuarioState extends ConsumerState<PantallaNuevoUsuario> {
                 etiqueta: 'RUT',
                 campo: CampoTexto(
                   controlador: _rut,
-                  hint: '17.930.556-4',
+                  hint: '12.345.678-5',
                   icono: Icons.badge_outlined,
                   mono: true,
                   habilitado: !_enviando,
-                  validador: (v) => (v == null || v.trim().isEmpty)
-                      ? 'El RUT es obligatorio'
-                      : null,
+                  formatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9kK.\-\s]')),
+                  ],
+                  validador: (v) => Formato.errorDeRut(v ?? ''),
                 ),
                 ayuda:
                     'Identifica a la persona en toda la cadena: quien recibe un '
@@ -330,33 +314,47 @@ class _PantallaNuevoUsuarioState extends ConsumerState<PantallaNuevoUsuario> {
               ],
               const SizedBox(height: 10),
               CampoConEtiqueta(
-                etiqueta: 'PIN inicial',
+                etiqueta: PoliticaClave.esPin(_rol)
+                    ? 'PIN inicial'
+                    : 'Clave inicial',
                 campo: CampoTexto(
                   controlador: _pin,
-                  hint: '••••',
+                  hint: PoliticaClave.esPin(_rol)
+                      ? '••••'
+                      : 'Mínimo 8 caracteres',
                   icono: Icons.lock_outline,
                   mono: true,
                   oculto: true,
-                  maxLength: 4,
-                  teclado: TextInputType.number,
-                  formatters: [FilteringTextInputFormatter.digitsOnly],
-                  habilitado: !_enviando,
-                  validador: (v) => (v == null || v.length != 4)
-                      ? 'El PIN son 4 dígitos'
+                  maxLength: PoliticaClave.esPin(_rol)
+                      ? PoliticaClave.largoPin
+                      : PoliticaClave.maximoClave,
+                  teclado: PoliticaClave.esPin(_rol)
+                      ? TextInputType.number
+                      : TextInputType.visiblePassword,
+                  formatters: PoliticaClave.esPin(_rol)
+                      ? [FilteringTextInputFormatter.digitsOnly]
                       : null,
+                  habilitado: !_enviando,
+                  validador: (v) => PoliticaClave.error(v ?? '', rol: _rol),
                 ),
-                ayuda:
-                    'Entrégaselo en persona y pídele que lo cambie. El sistema '
-                    'guarda solo su huella: ni tú ni nadie puede volver a verlo.',
+                ayuda: PoliticaClave.esPin(_rol)
+                    ? 'Entrégaselo en persona y pídele que lo cambie. El '
+                          'sistema guarda solo su huella: ni tú ni nadie puede '
+                          'volver a verlo.'
+                    : 'De 8 a 72 caracteres. Entrégasela en persona: tendrá '
+                          'que cambiarla al entrar. El sistema guarda solo su '
+                          'huella: ni tú ni nadie puede volver a verla.',
               ),
               if (_error != null) ...[
                 const SizedBox(height: 16),
                 MensajeError(mensaje: _error!),
               ],
               const SizedBox(height: 22),
-              FilledButton(
-                onPressed: _enviando ? null : _guardar,
-                child: Text(_enviando ? 'Registrando…' : 'Registrar usuario'),
+              BotonEnvio(
+                texto: 'Registrar usuario',
+                textoEnviando: 'Registrando…',
+                enviando: _enviando,
+                alPresionar: _guardar,
               ),
             ],
           ),
@@ -428,6 +426,108 @@ class _OpcionRol extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// El diálogo del PIN nuevo, con su propio estado.
+///
+/// El controlador vive con el diálogo y no con quien lo abre: antes se
+/// liberaba apenas el diálogo devolvía el valor, mientras la animación de
+/// salida todavía dibujaba el campo, y Flutter reclamaba por un controlador
+/// usado después de liberado. "Restablecer" además solo se habilita con cuatro
+/// dígitos: antes se podía tocar con tres y no pasaba nada, sin decir por qué.
+class _DialogoPin extends StatefulWidget {
+  const _DialogoPin({required this.nombre, required this.rol});
+
+  final String nombre;
+
+  /// Del rol depende qué se acepta: PIN de 4 dígitos para el trabajador,
+  /// clave de 8 a 72 caracteres para el resto.
+  final String rol;
+
+  @override
+  State<_DialogoPin> createState() => _DialogoPinState();
+}
+
+class _DialogoPinState extends State<_DialogoPin> {
+  final _pin = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _pin.addListener(_alCambiar);
+  }
+
+  void _alCambiar() => setState(() {});
+
+  @override
+  void dispose() {
+    _pin.removeListener(_alCambiar);
+    _pin.dispose();
+    super.dispose();
+  }
+
+  bool get _completo => PoliticaClave.error(_pin.text, rol: widget.rol) == null;
+
+  void _confirmar() {
+    if (_completo) Navigator.of(context).pop(_pin.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        '${PoliticaClave.esPin(widget.rol) ? 'PIN' : 'Clave'} de ${widget.nombre}',
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'La anterior no se puede recuperar: el sistema solo guarda su '
+            'huella. Define una nueva y entrégasela en persona.',
+            style: TextStyle(fontSize: 13, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          CampoTexto(
+            controlador: _pin,
+            hint: PoliticaClave.esPin(widget.rol)
+                ? '••••'
+                : 'Mínimo 8 caracteres',
+            icono: Icons.lock_outline,
+            mono: true,
+            maxLength: PoliticaClave.esPin(widget.rol)
+                ? PoliticaClave.largoPin
+                : PoliticaClave.maximoClave,
+            teclado: PoliticaClave.esPin(widget.rol)
+                ? TextInputType.number
+                : TextInputType.visiblePassword,
+            formatters: PoliticaClave.esPin(widget.rol)
+                ? [FilteringTextInputFormatter.digitsOnly]
+                : null,
+            alEnviar: (_) => _confirmar(),
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              PoliticaClave.progreso(_pin.text, rol: widget.rol),
+              style: const TextStyle(fontSize: 12, color: AppColors.secondary),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _completo ? _confirmar : null,
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+          child: const Text('Restablecer'),
+        ),
+      ],
     );
   }
 }

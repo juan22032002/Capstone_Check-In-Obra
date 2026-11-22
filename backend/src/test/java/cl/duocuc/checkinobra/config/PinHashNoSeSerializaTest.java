@@ -37,7 +37,7 @@ class PinHashNoSeSerializaTest {
                 .rol(RolUsuario.BODEGUERO)
                 .empresa(Empresa.builder().id(1L).nombre("Constructora").rut("76.543.210-K").build())
                 .build();
-        usuario.definirPin("4821");
+        usuario.definirPin("clave-larga-4821");
     }
 
     @Test
@@ -75,7 +75,7 @@ class PinHashNoSeSerializaTest {
     void el_hash_sigue_existiendo_y_autenticando_puertas_adentro() {
         // Ocultarlo en el JSON no puede haberlo desconectado del login.
         assertThat(usuario.getPinHash()).isNotBlank();
-        assertThat(usuario.autenticar("4821")).isTrue();
+        assertThat(usuario.autenticar("clave-larga-4821")).isTrue();
         assertThat(usuario.autenticar("0000")).isFalse();
     }
 }

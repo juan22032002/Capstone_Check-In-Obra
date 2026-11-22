@@ -69,16 +69,58 @@ public class Usuario implements PerteneceAEmpresa {
     @Column(name = "pin_hash")
     private String pinHash;
 
+    /**
+     * La clave es provisoria (la inicial del primer administrador, o una anterior a
+     * la política de 8 caracteres): hasta que la cambie, la cuenta solo puede
+     * llamar a {@code PUT /api/auth/pin}. Lo limpia {@link #definirPin}.
+     */
+    @Column(name = "debe_cambiar_pin", nullable = false)
+    private boolean debeCambiarPin;
+
+    /**
+     * La versión de sesión: el token lleva la que tenía el usuario al emitirse y el filtro la
+     * compara con esta. Sube cuando cambia lo que un token da por hecho (clave restablecida,
+     * rol cambiado) y deja sin efecto, de golpe, todos los tokens anteriores del usuario.
+     */
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion;
+
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "empresa_id", nullable = false)
     private Empresa empresa;
 
-    /** Fija (o cambia) el PIN, guardando solo su hash — nunca el PIN en claro. */
+    /** Invalida todos los tokens emitidos hasta ahora para este usuario. */
+    public void invalidarSesiones() {
+        this.tokenVersion++;
+    }
+
+    /** Largo mínimo de la clave de ADMIN, JEFE_TERRENO y BODEGUERO. */
+    public static final int CLAVE_MIN = 8;
+
+    /** BCrypt ignora lo que pase de 72 bytes: mejor rechazarlo que truncar en silencio. */
+    public static final int CLAVE_MAX_BYTES = 72;
+
+    /**
+     * Fija (o cambia) la credencial, guardando solo su hash — nunca en claro.
+     *
+     * <p>El TRABAJADOR entra con un PIN de 4 dígitos desde su teléfono. Los demás
+     * roles tienen permisos que un PIN de 10 000 combinaciones no protege
+     * (S-02): exigen una clave de {@value #CLAVE_MIN} o más caracteres.
+     */
     public void definirPin(String pinPlano) {
-        if (pinPlano == null || !pinPlano.matches("\\d{4}")) {
-            throw new IllegalArgumentException("El PIN debe tener 4 dígitos");
+        if (rol == RolUsuario.TRABAJADOR) {
+            if (pinPlano == null || !pinPlano.matches("\\d{4}")) {
+                throw new IllegalArgumentException("El PIN del trabajador debe tener 4 dígitos");
+            }
+        } else if (pinPlano == null || pinPlano.length() < CLAVE_MIN) {
+            throw new IllegalArgumentException(
+                    "La clave de " + rol + " debe tener al menos " + CLAVE_MIN + " caracteres");
+        } else if (pinPlano.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > CLAVE_MAX_BYTES) {
+            throw new IllegalArgumentException("La clave no puede pasar de " + CLAVE_MAX_BYTES + " bytes");
         }
         this.pinHash = BCrypt.hashpw(pinPlano, BCrypt.gensalt());
+        // Una credencial nueva, que ya cumplió la política, deja de ser provisoria.
+        this.debeCambiarPin = false;
     }
 
     /** Usuario.autenticar(pin): boolean del diagrama. */

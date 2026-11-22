@@ -1,8 +1,28 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Firma de release. Los datos salen de variables de entorno (el CI, desde sus
+// secretos) o, en local, de `android/key.properties`, que no se versiona. El
+// keystore nunca vive en el repo: con él se podría firmar una app que se haga
+// pasar por esta.
+val clavesLocales = Properties().apply {
+    val archivo = rootProject.file("key.properties")
+    if (archivo.exists()) archivo.inputStream().use { load(it) }
+}
+
+fun dato(entorno: String, propiedad: String): String? =
+    (System.getenv(entorno) ?: clavesLocales.getProperty(propiedad))?.takeIf { it.isNotBlank() }
+
+val keystoreArchivo = dato("CHECKINOBRA_KEYSTORE_FILE", "storeFile")
+val keystoreClave = dato("CHECKINOBRA_KEYSTORE_PASSWORD", "storePassword")
+val keystoreAlias = dato("CHECKINOBRA_KEY_ALIAS", "keyAlias")
+val keystoreAliasClave = dato("CHECKINOBRA_KEY_PASSWORD", "keyPassword")
+val hayKeystore = listOf(keystoreArchivo, keystoreClave, keystoreAlias, keystoreAliasClave).all { it != null }
 
 android {
     namespace = "cl.duocuc.checkinobra_mobile"
@@ -32,12 +52,38 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hayKeystore) {
+            create("release") {
+                storeFile = rootProject.file(keystoreArchivo!!)
+                storePassword = keystoreClave
+                keyAlias = keystoreAlias
+                keyPassword = keystoreAliasClave
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Nunca la clave de debug: cualquiera tiene la misma, así que un
+            // APK firmado con ella no prueba quién lo publicó (hallazgo S-20).
+            signingConfig = if (hayKeystore) signingConfigs.getByName("release") else null
         }
+    }
+}
+
+// Un release sin keystore no sale firmado y Flutter lo informaría recién al
+// instalarlo; mejor cortar acá y decir qué falta.
+gradle.taskGraph.whenReady {
+    val pideRelease = allTasks.any { it.project == project && it.name in setOf("assembleRelease", "bundleRelease") }
+    if (pideRelease && !hayKeystore) {
+        throw GradleException(
+            "Falta el keystore de firma. Define CHECKINOBRA_KEYSTORE_FILE, " +
+                "CHECKINOBRA_KEYSTORE_PASSWORD, CHECKINOBRA_KEY_ALIAS y " +
+                "CHECKINOBRA_KEY_PASSWORD, o crea android/key.properties con " +
+                "storeFile, storePassword, keyAlias y keyPassword. " +
+                "Ver mobile/README.md."
+        )
     }
 }
 

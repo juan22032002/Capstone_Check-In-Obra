@@ -1,0 +1,72 @@
+name: APK de release
+
+# Manual a propósito: firma con el keystore del repositorio y publica un APK que
+# se instala en los teléfonos de las obras. No corre en cada push.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: APK firmado y ofuscado
+    runs-on: ubuntu-latest
+
+    # Todo lo sensible entra por secretos y variables del repositorio:
+    #   secrets.ANDROID_KEYSTORE_BASE64    el .jks en base64
+    #   secrets.ANDROID_KEYSTORE_PASSWORD
+    #   secrets.ANDROID_KEY_ALIAS
+    #   secrets.ANDROID_KEY_PASSWORD
+    #   vars.API_BASE_URL                  la URL https:// de producción
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Preparar .env
+        working-directory: mobile
+        # El asset .env tiene que existir para armar el bundle. En release la
+        # app no lo lee: la URL entra solo por --dart-define.
+        run: cp .env.example .env
+
+      - name: Descargar dependencias
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Recrear el keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        # Fuera del árbol del repo para que no se pueda commitear sin querer.
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "CHECKINOBRA_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Compilar
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          CHECKINOBRA_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CHECKINOBRA_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CHECKINOBRA_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: scripts/release-apk.sh
+
+      - name: Publicar el APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: checkinobra-release-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: Publicar los símbolos de depuración
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          # Sin esto un stack trace del APK ofuscado no se puede leer. Se
+          # guardan aparte y no dentro del APK.
+          name: checkinobra-debug-info
+          path: mobile/build/debug-info/
+          if-no-files-found: error

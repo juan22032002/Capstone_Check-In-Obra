@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Check-In-Obra multi-tenant</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Tokens: design system de Check-In-Obra (docs/design-system) mapeado a los roles de diagram-design */
+    :root {
+      color-scheme: light;
+      --color-paper:       #F8FAFC;
+      --color-paper-2:     #F1F5F9;
+      --color-ink:         #334155;
+      --color-muted:       #475569;
+      --color-soft:        #64748B;
+      --color-rule:        rgba(51,65,85,0.12);
+      --color-accent:      #C2410C;
+      --color-accent-tint: rgba(194,65,12,0.08);
+      --color-link:        #1D4ED8;
+      --font-sans:  'Inter', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', 'Noto Serif', 'Times New Roman', serif;
+      --font-mono:  'Geist Mono', ui-monospace, Menlo, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      padding: 3rem 1rem 4rem;
+      line-height: 1.55;
+    }
+
+    .container { max-width: 1280px; margin: 0 auto; }
+    .prose { max-width: 72ch; }
+
+    .header { margin-bottom: 3rem; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(2rem, 3vw + 1rem, 2.75rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 0.75rem;
+    }
+    h2 {
+      font-family: var(--font-serif);
+      font-size: 1.75rem;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+      margin: 3.5rem 0 0.75rem;
+    }
+    h3 { font-size: 0.9rem; font-weight: 600; }
+    .subtitle { font-size: 1.05rem; color: var(--color-muted); max-width: 64ch; }
+    p { color: var(--color-muted); font-size: 0.95rem; margin-bottom: 0.75rem; }
+    p strong, li strong { color: var(--color-ink); font-weight: 600; }
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.82em;
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
+      border-radius: 3px;
+      padding: 0 0.3em;
+      color: var(--color-ink);
+    }
+
+    /* Diagramas: el SVG conserva su ancho y el contenedor hace scroll propio */
+    figure { margin: 1.5rem 0 0.5rem; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    svg { width: 100%; min-width: 1280px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+    figcaption {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 1.05rem;
+      color: var(--color-muted);
+      margin-top: 0.75rem;
+      max-width: 80ch;
+    }
+    .fig-num {
+      font-family: var(--font-mono);
+      font-style: normal;
+      font-size: 0.66rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      margin-right: 0.5rem;
+    }
+
+    /* Tarjetas: anchos distintos, borde fino, sin sombra */
+    .cards { display: grid; gap: 1rem; margin-top: 1.25rem; }
+    .cards.three { grid-template-columns: 1.1fr 1fr 0.9fr; }
+    .cards.two { grid-template-columns: 1.2fr 1fr; }
+    @media (max-width: 860px) { .cards.three, .cards.two { grid-template-columns: 1fr; } }
+    .card {
+      background: #ffffff;
+      border: 1px solid var(--color-rule);
+      border-radius: 6px;
+      padding: 1.25rem;
+      min-width: 0;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding-bottom: 0.75rem; margin-bottom: 0.75rem;
+      border-bottom: 1px solid var(--color-rule);
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot.ink { background: var(--color-ink); }
+    .dot.accent { background: var(--color-accent); }
+    .dot.soft { background: var(--color-soft); }
+    .card ul { list-style: none; font-size: 0.84rem; color: var(--color-muted); }
+    .card li { position: relative; padding-left: 0.9rem; margin-bottom: 0.4rem; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: rgba(51,65,85,0.3); font-size: 0.75rem; }
+
+    /* Tablas */
+    .table-wrap { width: 100%; overflow-x: auto; margin-top: 1.25rem; }
+    table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 0.86rem; background: #fff; border: 1px solid var(--color-rule); border-radius: 6px; }
+    th, td { text-align: left; vertical-align: top; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--color-rule); }
+    th {
+      font-family: var(--font-mono); font-weight: 500; font-size: 0.66rem;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-soft);
+      background: var(--color-paper-2);
+    }
+    td { color: var(--color-muted); }
+    td:first-child { color: var(--color-ink); font-weight: 600; white-space: nowrap; }
+    tr.chosen td { background: var(--color-accent-tint); }
+    tr.chosen td:first-child { color: var(--color-accent); }
+    tr:last-child td { border-bottom: none; }
+
+    .footer {
+      margin-top: 4rem; padding-top: 1.5rem;
+      border-top: 1px solid var(--color-rule);
+      font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em;
+      color: var(--color-soft);
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header class="header">
+    <p class="eyebrow">Propuesta de arquitectura · Octubre 2026</p>
+    <h1>Check-In-Obra multi-tenant</h1>
+    <p class="subtitle">Hoy el sistema atiende a una constructora sembrada por migración. Esta propuesta lo lleva a muchas PYMEs en la misma instalación, cada una con su propia base de datos, de modo que el inventario, las obras y los costos de una constructora nunca estén en la misma base que los de otra.</p>
+  </header>
+
+  <section class="prose">
+    <h2>Punto de partida</h2>
+    <p>El modelo ya tiene la forma de un sistema multi-tenant: <code>Empresa</code> es la raíz, el JWT lleva el claim <code>empresaId</code> y <code>AccesoEmpresa.esPropio</code> devuelve el mismo 404 para un recurso ajeno que para uno inexistente, así que nadie puede contar las obras de la competencia. Todas las empresas comparten hoy una sola base, y el aislamiento depende de que cada servicio se acuerde de pedirlo. Una observación recibida pide que las bases sean independientes por empresa, y esta propuesta la adopta.</p>
+  </section>
+
+  <div class="cards three">
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>Lo que ya existe</h3></div>
+      <ul>
+        <li><code>empresa_id</code> en <code>usuarios</code>, <code>obras</code>, <code>materiales</code> y <code>herramientas</code></li>
+        <li>Claim <code>empresaId</code> firmado en el JWT</li>
+        <li><code>PerteneceAEmpresa</code> en las 17 entidades y un guardián único</li>
+        <li>Código de barras único por empresa, no global (V4)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>Lo que falta</h3></div>
+      <ul>
+        <li>Dar de alta empresas: hoy solo existe la que siembra <code>V2__seed_admin.sql</code></li>
+        <li>Una base por empresa y algo que elija cuál abrir en cada petición</li>
+        <li>Flyway corre sobre una sola base</li>
+        <li>La API conecta como <code>postgres</code>, un superusuario</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot soft"></span><h3>Por qué importa</h3></div>
+      <ul>
+        <li>48 comprobaciones a mano repartidas en 16 archivos</li>
+        <li>Basta un endpoint nuevo sin <code>esPropio</code> para filtrar datos</li>
+        <li>Los costos unitarios (V8) son información comercial sensible</li>
+      </ul>
+    </div>
+  </div>
+
+  <section class="prose">
+    <h2>Modelo elegido</h2>
+    <p>Hay tres formas clásicas de separar clientes. La propuesta es <strong>una base de datos por empresa</strong>, dentro del mismo servidor PostgreSQL. Cada base tiene el mismo esquema y su propio usuario, y una base de catálogo guarda qué empresas existen y cómo conectarse a cada una. Con esto, un error de filtro en el código ya no alcanza a otra constructora: sus datos no están en la base que se abrió.</p>
+    <p>El costo es operativo: Flyway corre una vez por base y hay un pool de conexiones por empresa. Para decenas de PYMEs eso cabe en un solo servidor. Si algún día fueran cientos, convendría repartir las bases entre varios servidores, sin cambiar el modelo.</p>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Modelo</th><th>Aislamiento</th><th>Migraciones Flyway</th><th>Costo por empresa</th><th>Cuándo conviene</th></tr></thead>
+      <tbody>
+        <tr class="chosen"><td>Base por empresa (elegido)</td><td>Físico: cada constructora en su base, con su usuario</td><td>Una corrida por base, automatizada al arrancar y al dar de alta</td><td>Medio: una base y un pool de conexiones</td><td>Cuando cada constructora exige que sus costos e inventario estén separados, que es la observación recibida</td></tr>
+        <tr><td>Esquema por empresa</td><td>Por esquema, vía <code>search_path</code></td><td>Una corrida por esquema; se desfasan si una falla</td><td>Bajo</td><td>Decenas de clientes que aceptan compartir base</td></tr>
+        <tr><td>Base compartida + RLS</td><td>Por fila, aplicado por PostgreSQL</td><td>Una sola corrida</td><td>Casi cero</td><td>Cientos de clientes chicos que aceptan compartir base</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="prose">
+    <h2>Arquitectura objetivo</h2>
+    <p>Hay dos planos. El <strong>plano del tenant</strong> es lo que ya existe: la app Flutter y los servicios de dominio, siempre dentro de una empresa. El <strong>plano de plataforma</strong> es nuevo: da de alta empresas, asigna planes y suspende cuentas, y solo escribe en la base de catálogo. Entre los servicios y PostgreSQL aparece una pieza nueva, el <strong>enrutador</strong>, que abre la base de la empresa que viene en el token y ninguna otra.</p>
+  </section>
+
+  <figure>
+    <div class="diagram-container">
+<svg viewBox="0 88 1280 536" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arq-title arq-desc">
+<title id="arq-title">Check-In-Obra con una base por empresa</title>
+<desc id="arq-desc">Las peticiones entran por un filtro que toma la empresa del JWT; un enrutador abre solo la base de esa empresa, sin camino hacia la base de otra, y el módulo de plataforma da de alta empresas en una base de catálogo que el enrutador consulta para conocer las conexiones.</desc>
+<defs><marker id="arq-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#475569"/></marker><marker id="arq-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#C2410C"/></marker><marker id="arq-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#1D4ED8"/></marker></defs>
+<rect x="0" y="88" width="1280" height="536" fill="#F8FAFC"/>
+<rect x="32" y="120" width="200" height="416" rx="8" fill="rgba(51,65,85,0.02)" stroke="rgba(51,65,85,0.14)" stroke-width="0.8" stroke-dasharray="6,4"/><rect x="44" y="124" width="140" height="12" rx="2" fill="#F8FAFC"/><text x="50" y="133" fill="#64748B" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">CLIENTES · NO CONFIABLES</text>
+<rect x="280" y="120" width="608" height="416" rx="8" fill="rgba(51,65,85,0.02)" stroke="rgba(51,65,85,0.14)" stroke-width="0.8" stroke-dasharray="6,4"/><rect x="292" y="124" width="136" height="12" rx="2" fill="#F8FAFC"/><text x="298" y="133" fill="#64748B" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">API SPRING BOOT · :8080</text>
+<rect x="936" y="120" width="312" height="416" rx="8" fill="rgba(51,65,85,0.02)" stroke="rgba(51,65,85,0.14)" stroke-width="0.8" stroke-dasharray="6,4"/><rect x="948" y="124" width="204" height="12" rx="2" fill="#F8FAFC"/><text x="954" y="133" fill="#64748B" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">POSTGRESQL 16 · UNA BASE POR EMPRESA</text>
+<path d="M216,216 H252 Q260,216 260,224 V300 Q260,308 268,308 H304" fill="none" stroke="#1D4ED8" stroke-width="1.2" marker-end="url(#arq-arrow-link)"/>
+<rect x="220" y="196" width="32" height="12" rx="2" fill="#F8FAFC"/><text x="236" y="205" fill="#1D4ED8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">JWT</text>
+<path d="M216,456 H252 Q260,456 260,448 V340 Q260,332 268,332 H304" fill="none" stroke="#1D4ED8" stroke-width="1.2" marker-end="url(#arq-arrow-link)"/>
+<rect x="220" y="436" width="32" height="12" rx="2" fill="#F8FAFC"/><text x="236" y="445" fill="#1D4ED8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">JWT</text>
+<path d="M464,308 H480 Q488,308 488,300 V208 Q488,200 496,200 H512" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arq-arrow)"/>
+<rect x="412" y="240" width="68" height="12" rx="2" fill="#F8FAFC"/><text x="446" y="249" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">EMPRESA_ID</text>
+<path d="M464,332 H480 Q488,332 488,340 V448 Q488,456 496,456 H512" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arq-arrow)"/>
+<rect x="388" y="388" width="92" height="12" rx="2" fill="#F8FAFC"/><text x="434" y="397" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">ROL PLATAFORMA</text>
+<path d="M672,200 H712" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arq-arrow)"/>
+<path d="M872,188 H952" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arq-arrow)"/>
+<rect x="880" y="168" width="64" height="12" rx="2" fill="#F8FAFC"/><text x="912" y="177" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">EMPRESA 7</text>
+<path d="M872,216 H904 Q912,216 912,224 V328 Q912,336 920,336 H936" fill="none" stroke="#334155" stroke-width="1.2" stroke-dasharray="2,3"/>
+<line x1="940" y1="326" x2="940" y2="346" stroke="#334155" stroke-width="1.6"/>
+<rect x="924" y="264" width="80" height="12" rx="2" fill="#F8FAFC"/><text x="964" y="273" fill="#334155" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">OTRA EMPRESA</text>
+<path d="M672,456 H952" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arq-arrow)"/>
+<rect x="772" y="436" width="80" height="12" rx="2" fill="#F8FAFC"/><text x="812" y="445" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">ALTA EMPRESA</text>
+<path d="M792,240 V392 Q792,400 800,400 H1080 Q1088,400 1088,408 V432" fill="none" stroke="#475569" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arq-arrow)"/>
+<rect x="806" y="312" width="68" height="12" rx="2" fill="#F8FAFC"/><text x="840" y="321" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">CONEXIONES</text>
+<rect x="48" y="176" width="168" height="80" rx="6" fill="#F8FAFC"/>
+<rect x="48" y="176" width="168" height="80" rx="6" fill="rgba(71,85,105,0.1)" stroke="#64748B" stroke-width="1"/>
+<rect x="56" y="182" width="28" height="12" rx="2" fill="none" stroke="#64748B" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="70" y="191" fill="#64748B" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+<text x="132" y="213" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">App Flutter</text>
+<text x="132" y="227" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">Android · cola offline</text>
+<text x="132" y="241" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">JWT con empresaId</text>
+<rect x="48" y="416" width="168" height="80" rx="6" fill="#F8FAFC"/>
+<rect x="48" y="416" width="168" height="80" rx="6" fill="rgba(71,85,105,0.1)" stroke="#64748B" stroke-width="1"/>
+<rect x="56" y="422" width="28" height="12" rx="2" fill="none" stroke="#64748B" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="70" y="431" fill="#64748B" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">OPS</text>
+<text x="132" y="453" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">Backoffice plataforma</text>
+<text x="132" y="467" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">rol PLATAFORMA</text>
+<text x="132" y="481" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">token sin empresaId</text>
+<rect x="304" y="280" width="160" height="80" rx="6" fill="#F8FAFC"/>
+<rect x="304" y="280" width="160" height="80" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1"/>
+<rect x="312" y="286" width="32" height="12" rx="2" fill="none" stroke="#334155" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="328" y="295" fill="#334155" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">GATE</text>
+<text x="384" y="317" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">Filtro de tenant</text>
+<text x="384" y="331" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">JwtAuthFilter</text>
+<text x="384" y="345" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">→ TenantContext</text>
+<rect x="512" y="160" width="160" height="80" rx="6" fill="#F8FAFC"/>
+<rect x="512" y="160" width="160" height="80" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1"/>
+<rect x="520" y="166" width="28" height="12" rx="2" fill="none" stroke="#334155" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="534" y="175" fill="#334155" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+<text x="592" y="197" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">Servicios de dominio</text>
+<text x="592" y="211" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">obra · cubicación</text>
+<text x="592" y="225" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">inventario · control</text>
+<rect x="512" y="416" width="160" height="80" rx="6" fill="#F8FAFC"/>
+<rect x="512" y="416" width="160" height="80" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1"/>
+<rect x="520" y="422" width="28" height="12" rx="2" fill="none" stroke="#334155" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="534" y="431" fill="#334155" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+<text x="592" y="453" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">Módulo plataforma</text>
+<text x="592" y="467" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">alta · plan</text>
+<text x="592" y="481" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">suspensión</text>
+<rect x="712" y="160" width="160" height="80" rx="6" fill="#F8FAFC"/>
+<rect x="712" y="160" width="160" height="80" rx="6" fill="rgba(194,65,12,0.08)" stroke="#C2410C" stroke-width="1"/>
+<rect x="720" y="166" width="40" height="12" rx="2" fill="none" stroke="#C2410C" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="740" y="175" fill="#C2410C" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">ROUTER</text>
+<text x="792" y="197" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">Enrutador</text>
+<text x="792" y="211" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">AbstractRoutingDataSource</text>
+<text x="792" y="225" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">un pool por empresa</text>
+<rect x="952" y="148" width="272" height="92" rx="6" fill="#F8FAFC"/>
+<rect x="952" y="148" width="272" height="92" rx="6" fill="rgba(194,65,12,0.08)" stroke="#C2410C" stroke-width="1"/>
+<rect x="960" y="154" width="20" height="12" rx="2" fill="none" stroke="#C2410C" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="970" y="163" fill="#C2410C" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+<text x="1088" y="184" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">checkinobra_arauco</text>
+<text x="1088" y="198" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">obras · inventario · kardex</text>
+<text x="1088" y="212" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">usuario arauco_app</text>
+<text x="1088" y="226" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">sin superusuario</text>
+<rect x="952" y="300" width="272" height="72" rx="6" fill="#F8FAFC"/>
+<rect x="952" y="300" width="272" height="72" rx="6" fill="rgba(51,65,85,0.05)" stroke="#475569" stroke-width="1"/>
+<rect x="960" y="306" width="20" height="12" rx="2" fill="none" stroke="#475569" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="970" y="315" fill="#475569" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+<text x="1088" y="340" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">checkinobra_empresa_b</text>
+<text x="1088" y="354" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">mismas tablas, otra base</text>
+<rect x="952" y="432" width="272" height="80" rx="6" fill="#F8FAFC"/>
+<rect x="952" y="432" width="272" height="80" rx="6" fill="rgba(51,65,85,0.05)" stroke="#475569" stroke-width="1"/>
+<rect x="960" y="438" width="20" height="12" rx="2" fill="none" stroke="#475569" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="970" y="447" fill="#475569" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+<text x="1088" y="469" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">Base de catálogo</text>
+<text x="1088" y="483" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">empresas · planes · operadores</text>
+<text x="1088" y="497" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">conexión de cada base</text>
+<line x1="32" y1="568" x2="1248" y2="568" stroke="rgba(51,65,85,0.1)" stroke-width="0.8"/><text x="32" y="589" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">LEYENDA</text>
+<rect x="120" y="580" width="14" height="10" rx="2" fill="rgba(194,65,12,0.08)" stroke="#C2410C" stroke-width="1"/><text x="140" y="589" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Punto de control</text>
+<rect x="244" y="580" width="14" height="10" rx="2" fill="#ffffff" stroke="#334155" stroke-width="1"/><text x="264" y="589" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Servicio</text>
+<rect x="336" y="580" width="14" height="10" rx="2" fill="rgba(51,65,85,0.05)" stroke="#475569" stroke-width="1"/><text x="356" y="589" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Base</text>
+<rect x="412" y="580" width="14" height="10" rx="2" fill="rgba(71,85,105,0.1)" stroke="#64748B" stroke-width="1"/><text x="432" y="589" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Cliente</text>
+<line x1="500" y1="585" x2="520" y2="585" stroke="#1D4ED8" stroke-width="1.2" marker-end="url(#arq-arrow-link)"/><text x="530" y="589" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">HTTPS + JWT</text>
+<line x1="620" y1="585" x2="640" y2="585" stroke="#475569" stroke-width="1.2" marker-end="url(#arq-arrow)"/><text x="650" y="589" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Llamada interna</text>
+<line x1="756" y1="585" x2="776" y2="585" stroke="#475569" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arq-arrow)"/><text x="786" y="589" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Lectura al arrancar</text>
+<line x1="908" y1="585" x2="928" y2="585" stroke="#334155" stroke-width="1.2" stroke-dasharray="2,3"/><line x1="930" y1="579" x2="930" y2="591" stroke="#334155" stroke-width="1.6"/><text x="938" y="589" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Sin camino posible</text>
+</svg>
+    </div>
+    <figcaption><span class="fig-num">Fig. 1</span>El pool de la empresa 7 solo tiene credenciales para su base: no existe un camino desde ahí hacia la de otra constructora.</figcaption>
+  </figure>
+
+  <section class="prose">
+    <h2>Una petición, paso a paso</h2>
+    <p>El filtro lee <code>empresaId</code> del JWT y lo deja en un <code>TenantContext</code> (ThreadLocal) que se limpia en un <code>finally</code>. El enrutador es un <code>AbstractRoutingDataSource</code> de Spring: su <code>determineCurrentLookupKey()</code> devuelve la empresa del contexto y entrega la conexión del pool de esa empresa. Los pools se arman al arrancar, leyendo la base de catálogo, y se agrega uno cada vez que se da de alta una empresa. No hay base por defecto: si no hay empresa en el contexto, la petición falla en vez de caer en una base cualquiera.</p>
+  </section>
+
+  <figure>
+    <div class="diagram-container">
+<svg viewBox="0 0 1280 784" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-title seq-desc">
+<title id="seq-title">Una petición llegando a la base de su empresa</title>
+<desc id="seq-desc">Secuencia de una consulta al kardex: el filtro toma la empresa del JWT, el enrutador elige el pool de esa empresa y la consulta corre en su propia base; una obra de otra empresa no existe ahí y responde el mismo 404 que una inexistente.</desc>
+<defs><marker id="seq-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#475569"/></marker><marker id="seq-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#C2410C"/></marker><marker id="seq-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#1D4ED8"/></marker></defs>
+<rect width="100%" height="100%" fill="#F8FAFC"/>
+<line x1="128" y1="96" x2="128" y2="728" stroke="rgba(51,65,85,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="368" y1="96" x2="368" y2="728" stroke="rgba(51,65,85,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="608" y1="96" x2="608" y2="728" stroke="rgba(51,65,85,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="848" y1="96" x2="848" y2="728" stroke="rgba(51,65,85,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<line x1="1088" y1="96" x2="1088" y2="728" stroke="rgba(51,65,85,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+<rect x="364" y="136" width="8" height="576" fill="rgba(51,65,85,0.06)" stroke="#475569" stroke-width="0.8"/>
+<rect x="604" y="232" width="8" height="400" fill="rgba(51,65,85,0.06)" stroke="#475569" stroke-width="0.8"/>
+<rect x="844" y="272" width="8" height="332" fill="rgba(51,65,85,0.06)" stroke="#475569" stroke-width="0.8"/>
+<rect x="1084" y="352" width="8" height="248" fill="rgba(51,65,85,0.06)" stroke="#475569" stroke-width="0.8"/>
+<line x1="128" y1="136" x2="364" y2="136" stroke="#1D4ED8" stroke-width="1.2" marker-end="url(#seq-arrow-link)"/>
+<rect x="168" y="116" width="156" height="12" rx="2" fill="#F8FAFC"/><text x="246" y="125" fill="#1D4ED8" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">GET /OBRAS/42/KARDEX · JWT</text>
+<path d="M372,168 H400 Q408,168 408,176 V192 Q408,200 400,200 H372" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+<rect x="416" y="178" width="160" height="12" rx="2" fill="#F8FAFC"/><text x="422" y="187" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="start" letter-spacing="0.06em">EMPRESAID=7 → TENANTCONTEXT</text>
+<line x1="372" y1="232" x2="604" y2="232" stroke="#475569" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+<rect x="442" y="212" width="92" height="12" rx="2" fill="#F8FAFC"/><text x="488" y="221" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">LISTAR OBRA 42</text>
+<line x1="612" y1="272" x2="844" y2="272" stroke="#475569" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+<rect x="682" y="252" width="92" height="12" rx="2" fill="#F8FAFC"/><text x="728" y="261" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">PEDIR CONEXIÓN</text>
+<path d="M852,300 H880 Q888,300 888,308 V324 Q888,332 880,332 H852" fill="none" stroke="#C2410C" stroke-width="1.2" marker-end="url(#seq-arrow-accent)"/>
+<rect x="896" y="310" width="140" height="12" rx="2" fill="#F8FAFC"/><text x="902" y="319" fill="#C2410C" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="start" letter-spacing="0.06em">EMPRESA 7 → POOL ARAUCO</text>
+<line x1="852" y1="380" x2="1084" y2="380" stroke="#475569" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+<rect x="904" y="360" width="128" height="12" rx="2" fill="#F8FAFC"/><text x="968" y="369" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">SELECT … OBRA_ID = 42</text>
+<rect x="80" y="440" width="1064" height="208" rx="4" fill="rgba(51,65,85,0.02)" stroke="rgba(51,65,85,0.22)" stroke-width="1"/>
+<rect x="80" y="440" width="40" height="16" rx="2" fill="#F8FAFC" stroke="rgba(51,65,85,0.22)" stroke-width="1"/>
+<text x="100" y="452" fill="#475569" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.12em">ALT</text>
+<text x="92" y="472" fill="#475569" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.04em">[la obra 42 está en la base de la empresa 7]</text>
+<line x1="1084" y1="488" x2="852" y2="488" stroke="#475569" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow)"/>
+<rect x="918" y="468" width="100" height="12" rx="2" fill="#F8FAFC"/><text x="968" y="477" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">FILAS DEL KARDEX</text>
+<line x1="604" y1="520" x2="128" y2="520" stroke="#C2410C" stroke-width="1.4" marker-end="url(#seq-arrow-accent)"/>
+<rect x="212" y="500" width="80" height="12" rx="2" fill="#F8FAFC"/><text x="252" y="509" fill="#C2410C" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">200 · KARDEX</text>
+<line x1="88" y1="548" x2="1136" y2="548" stroke="rgba(51,65,85,0.2)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="92" y="568" fill="#475569" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.04em">[la obra es de otra empresa: no existe en esta base]</text>
+<line x1="1084" y1="596" x2="852" y2="596" stroke="#475569" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow)"/>
+<rect x="942" y="576" width="52" height="12" rx="2" fill="#F8FAFC"/><text x="968" y="585" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">0 FILAS</text>
+<line x1="604" y1="628" x2="128" y2="628" stroke="#475569" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow)"/>
+<rect x="194" y="608" width="116" height="12" rx="2" fill="#F8FAFC"/><text x="252" y="617" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">404 · NO ENCONTRADA</text>
+<path d="M372,672 H400 Q408,672 408,680 V696 Q408,704 400,704 H372" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+<rect x="416" y="682" width="128" height="12" rx="2" fill="#F8FAFC"/><text x="422" y="691" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="start" letter-spacing="0.06em">TENANTCONTEXT.CLEAR()</text>
+<rect x="40" y="40" width="176" height="56" rx="6" fill="#F8FAFC"/>
+<rect x="40" y="40" width="176" height="56" rx="6" fill="rgba(71,85,105,0.1)" stroke="#64748B" stroke-width="1"/>
+<rect x="48" y="46" width="28" height="12" rx="2" fill="none" stroke="#64748B" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="62" y="55" fill="#64748B" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+<text x="128" y="72" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">App Flutter</text>
+<text x="128" y="86" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">Android</text>
+<rect x="280" y="40" width="176" height="56" rx="6" fill="#F8FAFC"/>
+<rect x="280" y="40" width="176" height="56" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1"/>
+<rect x="288" y="46" width="32" height="12" rx="2" fill="none" stroke="#334155" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="304" y="55" fill="#334155" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">GATE</text>
+<text x="368" y="72" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">Filtro de tenant</text>
+<text x="368" y="86" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">JwtAuthFilter</text>
+<rect x="520" y="40" width="176" height="56" rx="6" fill="#F8FAFC"/>
+<rect x="520" y="40" width="176" height="56" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1"/>
+<rect x="528" y="46" width="28" height="12" rx="2" fill="none" stroke="#334155" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="542" y="55" fill="#334155" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+<text x="608" y="72" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">KardexService</text>
+<text x="608" y="86" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">@Transactional</text>
+<rect x="760" y="40" width="176" height="56" rx="6" fill="#F8FAFC"/>
+<rect x="760" y="40" width="176" height="56" rx="6" fill="rgba(194,65,12,0.08)" stroke="#C2410C" stroke-width="1"/>
+<rect x="768" y="46" width="40" height="12" rx="2" fill="none" stroke="#C2410C" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="788" y="55" fill="#C2410C" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">ROUTER</text>
+<text x="848" y="72" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">Enrutador</text>
+<text x="848" y="86" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">un pool por empresa</text>
+<rect x="1000" y="40" width="176" height="56" rx="6" fill="#F8FAFC"/>
+<rect x="1000" y="40" width="176" height="56" rx="6" fill="rgba(51,65,85,0.05)" stroke="#475569" stroke-width="1"/>
+<rect x="1008" y="46" width="20" height="12" rx="2" fill="none" stroke="#475569" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="1018" y="55" fill="#475569" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+<text x="1088" y="72" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif" text-anchor="middle">checkinobra_arauco</text>
+<text x="1088" y="86" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">usuario arauco_app</text>
+<line x1="32" y1="744" x2="1248" y2="744" stroke="rgba(51,65,85,0.1)" stroke-width="0.8"/><text x="32" y="765" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">LEYENDA</text>
+<line x1="120" y1="761" x2="140" y2="761" stroke="#1D4ED8" stroke-width="1.2" marker-end="url(#seq-arrow-link)"/><text x="150" y="765" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Llamada HTTP</text>
+<line x1="248" y1="761" x2="268" y2="761" stroke="#475569" stroke-width="1.2" marker-end="url(#seq-arrow)"/><text x="278" y="765" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Llamada interna</text>
+<line x1="384" y1="761" x2="404" y2="761" stroke="#475569" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow)"/><text x="414" y="765" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Retorno</text>
+<line x1="480" y1="761" x2="500" y2="761" stroke="#C2410C" stroke-width="1.2" marker-end="url(#seq-arrow-accent)"/><text x="510" y="765" fill="#475569" font-size="9" font-family="'Inter', system-ui, sans-serif">Paso clave / éxito</text>
+</svg>
+    </div>
+    <figcaption><span class="fig-num">Fig. 2</span>La rama del 404 sale sola: una obra de otra empresa simplemente no está en esta base, y responde igual que un id que nunca existió.</figcaption>
+  </figure>
+
+  <section class="prose">
+    <h2>Defensa en capas</h2>
+    <p>Separar las bases no vuelve innecesario el resto. Cada capa cubre el hueco de la anterior, y la tabla dice qué se escapa en cada nivel. <code>AccesoEmpresa</code> y la columna <code>empresa_id</code> se mantienen: no estorban, facilitan pasar de la base actual a las nuevas y sirven de red si el enrutador se configura mal en una prueba.</p>
+  </section>
+
+  <figure>
+    <div class="diagram-container">
+<svg viewBox="0 0 1280 592" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="capas-title capas-desc">
+<title id="capas-title">Cuatro capas contra la fuga entre empresas</title>
+<desc id="capas-desc">Capas de defensa ordenadas contra una lectura cruzada entre empresas con una base por empresa: JWT firmado, enrutador por empresa, contexto obligatorio y usuario de base por empresa; cada una cubre lo que se le escapa a la anterior y el riesgo residual queda en la credencial de migraciones.</desc>
+<rect width="100%" height="100%" fill="#F8FAFC"/>
+<text x="96" y="76" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">ENTRA</text>
+<line x1="96" y1="88" x2="96" y2="520" stroke="rgba(51,65,85,0.3)" stroke-width="1"/>
+<polygon points="92,520 100,520 96,528" fill="#475569"/>
+<text x="96" y="548" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">QUEDA</text>
+<rect x="160" y="56" width="1080" height="56" rx="6" fill="rgba(51,65,85,0.03)" stroke="rgba(51,65,85,0.3)" stroke-width="1"/>
+<text x="180" y="88" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">AMENAZA</text>
+<text x="280" y="82" fill="#334155" font-size="14" font-weight="600" font-family="'Inter', system-ui, sans-serif">Un usuario de la empresa A pide un recurso de la empresa B</text>
+<text x="280" y="99" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace">id adivinado · contexto mal fijado · tarea programada sin empresa</text>
+<text x="180" y="148" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">CAPA</text>
+<text x="280" y="148" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">CONTROL</text>
+<text x="600" y="148" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">DETIENE</text>
+<text x="920" y="148" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">SE LE ESCAPA → PASA A LA SIGUIENTE</text>
+<line x1="160" y1="160" x2="1240" y2="160" stroke="rgba(51,65,85,0.12)" stroke-width="1"/>
+<rect x="160" y="160" width="1080" height="80" fill="#ffffff"/>
+<line x1="160" y1="240" x2="1240" y2="240" stroke="rgba(51,65,85,0.12)" stroke-width="1"/>
+<text x="180" y="204" fill="#64748B" font-size="8" font-weight="400" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L1</text>
+<text x="280" y="196" fill="#334155" font-size="14" font-weight="600" font-family="'Inter', system-ui, sans-serif">JWT firmado</text>
+<text x="280" y="214" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace">JwtService · claim empresaId</text>
+<text x="600" y="196" fill="#334155" font-size="11" font-family="'Inter', system-ui, sans-serif">El cliente no declara su empresa: viaja</text>
+<text x="600" y="212" fill="#334155" font-size="11" font-family="'Inter', system-ui, sans-serif">firmada en el token, no en el body ni la URL.</text>
+<text x="920" y="196" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">Un token válido igual puede pedir</text>
+<text x="920" y="212" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">/obras/{id} de otra empresa.</text>
+<rect x="160" y="240" width="1080" height="80" fill="rgba(194,65,12,0.08)" stroke="#C2410C" stroke-width="1"/>
+<text x="180" y="284" fill="#C2410C" font-size="8" font-weight="600" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L2</text>
+<text x="280" y="276" fill="#334155" font-size="14" font-weight="600" font-family="'Inter', system-ui, sans-serif">Enrutador por empresa</text>
+<text x="280" y="294" fill="#C2410C" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace">AbstractRoutingDataSource</text>
+<text x="600" y="276" fill="#334155" font-size="11" font-family="'Inter', system-ui, sans-serif">La consulta corre en la base de su empresa:</text>
+<text x="600" y="292" fill="#334155" font-size="11" font-family="'Inter', system-ui, sans-serif">lo ajeno no existe ahí y responde 404.</text>
+<text x="920" y="276" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">Un TenantContext sin limpiar en un hilo</text>
+<text x="920" y="292" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">reusado mandaría la petición a otra base.</text>
+<rect x="160" y="320" width="1080" height="80" fill="#ffffff"/>
+<line x1="160" y1="400" x2="1240" y2="400" stroke="rgba(51,65,85,0.12)" stroke-width="1"/>
+<text x="180" y="364" fill="#64748B" font-size="8" font-weight="400" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L3</text>
+<text x="280" y="356" fill="#334155" font-size="14" font-weight="600" font-family="'Inter', system-ui, sans-serif">Contexto obligatorio</text>
+<text x="280" y="374" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace">clear() en finally · sin base por defecto</text>
+<text x="600" y="356" fill="#334155" font-size="11" font-family="'Inter', system-ui, sans-serif">Sin empresa fijada no hay conexión: el</text>
+<text x="600" y="372" fill="#334155" font-size="11" font-family="'Inter', system-ui, sans-serif">enrutador falla en vez de elegir una base.</text>
+<text x="920" y="356" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">Las tareas programadas no pasan por el</text>
+<text x="920" y="372" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">filtro y deben fijar la empresa a mano.</text>
+<rect x="160" y="400" width="1080" height="80" fill="#F8FAFC"/>
+<line x1="160" y1="480" x2="1240" y2="480" stroke="rgba(51,65,85,0.12)" stroke-width="1"/>
+<text x="180" y="444" fill="#64748B" font-size="8" font-weight="400" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">L4</text>
+<text x="280" y="436" fill="#334155" font-size="14" font-weight="600" font-family="'Inter', system-ui, sans-serif">Usuario de base por empresa</text>
+<text x="280" y="454" fill="#475569" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace">arauco_app solo entra a checkinobra_arauco</text>
+<text x="600" y="436" fill="#334155" font-size="11" font-family="'Inter', system-ui, sans-serif">Aunque el enrutador se equivoque, ese usuario</text>
+<text x="600" y="452" fill="#334155" font-size="11" font-family="'Inter', system-ui, sans-serif">no tiene permisos en la base de otra empresa.</text>
+<text x="920" y="436" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">El usuario de migraciones entra a todas.</text>
+<text x="920" y="452" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">Su credencial vive solo en el job de Flyway.</text>
+<line x1="160" y1="160" x2="160" y2="480" stroke="rgba(51,65,85,0.12)" stroke-width="1"/>
+<line x1="1240" y1="160" x2="1240" y2="480" stroke="rgba(51,65,85,0.12)" stroke-width="1"/>
+<rect x="160" y="504" width="1080" height="64" rx="6" fill="rgba(51,65,85,0.05)" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="180" y="532" fill="#64748B" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.14em">RESIDUAL</text>
+<text x="280" y="530" fill="#334155" font-size="12" font-weight="600" font-family="'Inter', system-ui, sans-serif">Se filtra la credencial de migraciones, o roban un token legítimo (que igual ve solo su empresa).</text>
+<text x="280" y="550" fill="#475569" font-size="11" font-family="'Inter', system-ui, sans-serif">Respuesta: secreto aparte para Flyway, respaldo por base y revocación de sesiones.</text>
+</svg>
+    </div>
+    <figcaption><span class="fig-num">Fig. 3</span>L2 es la capa que cambia el diseño: lo ajeno deja de estar filtrado y pasa a no estar.</figcaption>
+  </figure>
+
+  <section class="prose">
+    <h2>Si llega una constructora nueva</h2>
+    <p>Es el caso que justifica todo lo anterior. Hoy, sumar una empresa significa escribir una migración a mano. Con este modelo, es una operación del plano de plataforma que no toca las bases de las demás.</p>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Paso</th><th>Qué pasa</th><th>Quién lo hace</th></tr></thead>
+      <tbody>
+        <tr><td>1 · Alta en el catálogo</td><td>Se registra la empresa con su RUT y su plan en la base de catálogo.</td><td>Operador de plataforma, en <code>/api/plataforma/empresas</code></td></tr>
+        <tr><td>2 · Base propia</td><td>Se crea <code>checkinobra_&lt;empresa&gt;</code> con su usuario de PostgreSQL, y Flyway le aplica las mismas migraciones que tienen las demás.</td><td>El módulo de plataforma, en la misma operación</td></tr>
+        <tr><td>3 · Primer administrador</td><td>Se crea su usuario ADMIN, que carga el catálogo de materiales y herramientas con las planillas Excel de la importación masiva.</td><td>El administrador de la constructora</td></tr>
+        <tr><td>4 · Su equipo entra</td><td>Bodegueros, jefes de terreno y trabajadores inician sesión; el JWT trae su empresa y el enrutador solo abre su base.</td><td>La API, en cada petición</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="prose">
+    <h2>Qué cambia en cada parte</h2>
+  </section>
+
+  <div class="cards three">
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>Base de datos</h3></div>
+      <ul>
+        <li>Base de catálogo con empresas, planes, operadores y los datos de conexión de cada base</li>
+        <li>Una base <code>checkinobra_&lt;empresa&gt;</code> por constructora, con el esquema de siempre</li>
+        <li>Un usuario de PostgreSQL por base, sin superusuario y sin permisos en las otras</li>
+        <li>Un usuario aparte para Flyway, que solo usa el job de migración</li>
+        <li>Respaldo y borrado por empresa, con <code>pg_dump</code> de su base</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>Backend</h3></div>
+      <ul>
+        <li><code>TenantContext</code> poblado en <code>JwtAuthFilter</code>, limpiado en <code>finally</code></li>
+        <li><code>TenantRoutingDataSource</code> (un <code>AbstractRoutingDataSource</code>) con un pool Hikari por empresa y sin base por defecto</li>
+        <li>Flyway programático: recorre el catálogo al arrancar y migra cada base</li>
+        <li>Rol <code>PLATAFORMA</code> y rutas <code>/api/plataforma/**</code> para el alta y la suspensión</li>
+        <li>Las tareas programadas fijan la empresa a mano antes de tocar datos</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot soft"></span><h3>App móvil</h3></div>
+      <ul>
+        <li>Base drift por empresa (<code>checkinobra_&lt;empresaId&gt;.sqlite</code>), o se borra al cerrar sesión</li>
+        <li>Cada movimiento en cola guarda el <code>empresaId</code> con que se creó</li>
+        <li>Si la sesión actual es de otra empresa, la cola no se envía</li>
+      </ul>
+    </div>
+  </div>
+
+  <section class="prose">
+    <h2>Plan por fases</h2>
+    <p>Cada fase deja el sistema funcionando y se puede desplegar sola. Mientras exista una sola empresa, el enrutador tiene un único pool y todo se comporta como hoy, así que el cambio se puede probar sin apuro antes de la segunda constructora.</p>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Fase</th><th>Cambio</th><th>Dónde</th><th>Cómo se comprueba</th></tr></thead>
+      <tbody>
+        <tr><td>0 · Usuarios de base</td><td>La API deja de conectar como <code>postgres</code>; Flyway usa su propio usuario</td><td><code>docker-compose.yml</code>, <code>application.properties</code> (<code>spring.flyway.user</code>)</td><td><code>SELECT rolsuper FROM pg_roles WHERE rolname = 'arauco_app'</code> da <code>f</code></td></tr>
+        <tr><td>1 · Base de catálogo</td><td>Base nueva con empresas, planes y conexiones; la base actual pasa a ser la de Arauco</td><td>Migraciones propias del catálogo (<code>db/catalogo</code>)</td><td>La API arranca leyendo el catálogo y Arauco funciona igual que antes</td></tr>
+        <tr><td>2 · Enrutador</td><td><code>TenantContext</code> y <code>TenantRoutingDataSource</code>, sin base por defecto</td><td><code>config/</code></td><td>Suite con dos bases: cada GET ajeno da 404 y una petición sin empresa falla</td></tr>
+        <tr><td>3 · Flyway por base</td><td>Las migraciones corren en cada base del catálogo</td><td>Configuración de Flyway</td><td>Una base vacía registrada en el catálogo queda en la última versión al arrancar</td></tr>
+        <tr><td>4 · Plataforma</td><td>Alta de empresa de punta a punta (base, usuario, migración y ADMIN), suspensión y respaldos</td><td>Paquete <code>plataforma/</code></td><td>Dar de alta una constructora de prueba y entrar con su ADMIN; un token de tenant contra <code>/api/plataforma/**</code> da 403</td></tr>
+        <tr><td>5 · App</td><td>Base local y cola de sincronización por empresa</td><td><code>mobile/lib/data/local_db</code></td><td>Cambiar de cuenta en el mismo equipo no muestra ni envía datos de la anterior</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="prose">
+    <h2>Decisiones abiertas</h2>
+  </section>
+
+  <div class="cards two">
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>Dónde vive el login</h3></div>
+      <ul>
+        <li>Para saber qué base abrir hay que saber de qué empresa es quien inicia sesión, y eso pasa antes del JWT</li>
+        <li>Propuesta: el catálogo guarda un índice de correo a empresa; el PIN se sigue validando en la base de la empresa</li>
+        <li>El correo de login queda único en todo el sistema; el RUT del trabajador pasa a ser único solo dentro de su empresa, y un maestro subcontratado puede estar en dos constructoras</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>Catálogo de materiales</h3></div>
+      <ul>
+        <li>Hoy cada empresa carga sus propios materiales y mermas</li>
+        <li>Un catálogo base de plataforma (placa yeso-cartón, perfiles, tornillos) ahorraría el alta inicial</li>
+        <li>Se copiaría a la base de la empresa al crearla, para que los precios sigan siendo propios</li>
+      </ul>
+    </div>
+  </div>
+
+  <section>
+    <h2>Decisiones tomadas en la fase 1 (MT1)</h2>
+  </section>
+
+  <div class="cards two">
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>La tabla <code>empresas</code> de cada base</h3></div>
+      <ul>
+        <li>Cada base conserva <strong>una copia de una fila</strong> de <code>empresas</code>: la de su propia empresa, con el mismo <code>id</code> que tiene en el catálogo</li>
+        <li>Se descartó retirar las FKs: cuatro entidades la referencian (<code>Usuario</code>, <code>Obra</code>, <code>Material</code>, <code>Herramienta</code>) y <code>AccesoEmpresa</code> y la columna <code>empresa_id</code> se mantienen como segunda capa</li>
+        <li>Ese <code>id</code> es el que viaja en el JWT, así que el catálogo no necesita una columna aparte con "el id en la base"</li>
+        <li>Una empresa, una base: <code>nombre_base</code> es único en el catálogo</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>Qué hay en <code>checkinobra_catalogo</code></h3></div>
+      <ul>
+        <li>Tablas <code>planes</code>, <code>empresas</code> (rut, nombre, plan, estado, base, usuario y <em>referencia</em> al secreto), <code>operadores</code> e <code>indice_login</code> (correo → empresa, en minúsculas)</li>
+        <li>Sus migraciones están en <code>db/catalogo</code> y las aplica el migrador. La API la usa como <code>checkinobra_plataforma</code>, que solo ve esa base; el rol de una empresa no puede conectarse a ella</li>
+        <li>El catálogo guarda <code>env:NOMBRE_DE_VARIABLE</code>, nunca la contraseña</li>
+        <li>Al arrancar, la API migra el catálogo, registra a la empresa de la base actual (idempotente: no pisa el plan ni el estado que fije la plataforma) y completa el índice sin reasignar un correo que ya sea de otra empresa</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>El primer administrador ya no viene en una migración</h3></div>
+      <ul>
+        <li><code>V2__seed_admin.sql</code> salió de <code>db/migration</code>: el ADMIN se crea al dar de alta la empresa, no en cada base nueva</li>
+        <li>Mientras no exista el módulo de plataforma (fase 4), en una base vacía nace la primera empresa con su ADMIN al arrancar, con la clave de <code>PRIMER_ADMIN_CLAVE</code> y obligado a cambiarla</li>
+        <li>Las bases que ya aplicaron <code>V2</code> la conservan en su historial; Flyway ignora la migración aplicada que ya no está (<code>ignore-migration-patterns=*:missing</code>)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>Lo que todavía no hace</h3></div>
+      <ul>
+        <li>La API sigue abriendo una sola base: el catálogo se lee, pero no enruta (fase 2)</li>
+        <li>El índice de login se completa al arrancar; mantenerlo al crear usuarios llega con el login por empresa (MT4)</li>
+        <li>No hay alta de empresas ni su base propia (fase 4)</li>
+      </ul>
+    </div>
+  </div>
+
+  <section>
+    <h2>Decisiones tomadas en la fase 2 (MT2)</h2>
+  </section>
+
+  <div class="cards two">
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>El enrutador</h3></div>
+      <ul>
+        <li><code>JwtAuthFilter</code> llena el <code>TenantContext</code> con la empresa del token y lo limpia en un <code>finally</code> <strong>después</strong> de toda la cadena: <code>IdempotenciaFilter</code> corre más adentro y también usa la base</li>
+        <li><code>TenantRoutingDataSource</code> no tiene base por defecto. Sin empresa en el contexto, o con una sin pool, lanza <code>SinEmpresaEnContextoException</code></li>
+        <li>Un pool por empresa, armado desde el catálogo. La contraseña sale de la referencia <code>env:VARIABLE</code>; una empresa mal registrada se anota y no impide arrancar a las demás</li>
+        <li>Un token sin <code>empresaId</code> (antes, un NPE) o de una empresa sin base o suspendida es un token inválido: 401</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>El login pasa antes del token</h3></div>
+      <ul>
+        <li>Antes de autenticarse no hay empresa en el contexto. <code>/api/auth/login</code> la saca del índice del catálogo; <code>/api/auth/login-pin</code> recibe <code>empresaId</code> junto al id de usuario, porque los ids se repiten entre bases</li>
+        <li>El bloqueo por intentos incluye la empresa en su clave de cuenta por la misma razón</li>
+        <li>Crear un usuario reserva su correo en el catálogo antes de guardarlo, y lo suelta si guardar falla (dos bases, sin transacción compartida). Se compara sin distinguir mayúsculas</li>
+        <li>Mientras exista una sola empresa, <code>login-pin</code> sin <code>empresaId</code> se resuelve a esa: es lo que permite que una app anterior siga entrando</li>
+        <li>Además de abrir la base de la empresa pedida, el login comprueba que el usuario encontrado sea de ella: con una base por empresa siempre lo es, y si una base estuviera mal registrada o compartida, no se entra con la empresa equivocada (MT4)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>Hibernate sin conexión por defecto</h3></div>
+      <ul>
+        <li><code>hibernate.boot.allow_jdbc_metadata_access=false</code>, dialecto PostgreSQL explícito y <code>ddl-auto=none</code>: al arrancar no se abre ninguna conexión</li>
+        <li>Se pierde la validación del mapeo contra el esquema al arrancar. La suite de pruebas la conserva (<code>validate</code> contra su base) y el esquema de cada empresa lo garantizan las migraciones (fase 3)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>Lo que sigue sin hacer</h3></div>
+      <ul>
+        <li>Un job que migre una empresa nueva al darla de alta, sin reiniciar la API (fase 4): hoy se migra al arrancar</li>
+        <li>Alta de empresas y de su base (fase 4): hoy la base de una empresa se crea fuera, y solo hay una</li>
+        <li>La purga de claves de idempotencia ya recorre las empresas con base abierta; si una falla, sigue con las demás</li>
+      </ul>
+    </div>
+  </div>
+
+  <section>
+    <h2>Decisiones tomadas en la fase 3 (MT3)</h2>
+  </section>
+
+  <div class="cards two">
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>Flyway por cada base</h3></div>
+      <ul>
+        <li><code>spring.flyway.enabled=false</code>: el Flyway de Spring Boot migra una sola base y necesita una conexión sin empresa. <code>MigradorDeBases</code> corre Flyway programático sobre la base de cada empresa activa del catálogo, con el usuario migrador</li>
+        <li>Todas las bases reciben las mismas migraciones (<code>db/migration</code>), así que quedan en la misma versión. Una base vacía queda con el esquema completo en ese paso; el registro de la base inicial la migra antes de crear su empresa</li>
+        <li>Se mantiene <code>ignore-migration-patterns=*:missing</code> para las bases que aplicaron <code>V2</code>, que ya no está</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>Si una base falla</h3></div>
+      <ul>
+        <li>El resultado queda en el catálogo (<code>migracion_estado</code>, <code>migracion_error</code>, <code>migrada_en</code>) y en el log</li>
+        <li>Esa empresa no tiene pool y sus tokens no valen, porque una base a medio migrar no debe servir peticiones. Las demás se migran y arrancan igual</li>
+        <li>Una base nueva empieza <code>PENDIENTE</code> y solo se abre cuando su migración sale <code>OK</code></li>
+        <li>Orden en el arranque: registrar la base actual → migrar todas → abrir pools → crear el administrador → sincronizar el índice de login</li>
+      </ul>
+    </div>
+  </div>
+
+  <section>
+    <h2>Pruebas de aislamiento (MT5)</h2>
+  </section>
+
+  <div class="cards two">
+    <div class="card">
+      <div class="card-header"><span class="dot accent"></span><h3>Dos bases, de verdad</h3></div>
+      <ul>
+        <li><code>AislamientoConDosBasesTest</code> registra dos empresas en el catálogo, cada una en su base (la de la suite y una segunda, vacía, que se migra en la prueba), con el enrutador real y sin el resolutor compartido que usan las demás pruebas</li>
+        <li>Con el token de A, cada GET por id de un objeto de B responde 404 y cada listado responde 404 o vacío; los listados generales no traen nada de B</li>
+        <li>Sin empresa en el contexto, tocar la base falla por JDBC y por JPA, y una tarea programada sin empresa fijada también</li>
+        <li>Corren en la CI: el paso de roles crea la segunda base con <code>CHECKINOBRA_BASES_EXTRA</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="dot ink"></span><h3>Lo que demuestran</h3></div>
+      <ul>
+        <li>Estos casos pasan <strong>aunque un endpoint olvide filtrar por empresa</strong>: los datos de B no están en la base que abre el token de A. Con una sola base, <code>GET /api/trabajadores?obraId=</code> devolvía nombre y RUT ajenos (S-05); con dos bases, devuelve una lista vacía</li>
+        <li>Se comprobó con una mutación: si el resolutor entrega siempre la misma base, la suite detecta la fuga (con los datos de B en la respuesta de A)</li>
+        <li><code>AccesoEmpresa</code> sigue siendo la segunda capa para una base con más de una empresa (la de las demás pruebas)</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <span>Check-In-Obra · Propuesta multi-tenant · base por empresa</span>
+    <span>Actualizada el 2026-11-19: fases 1 a 3 y pruebas de aislamiento</span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -42,6 +42,14 @@ public class MotorCubicacionService {
                 .orElseThrow(() -> new NoSuchElementException("Partida no encontrada: " + partidaId));
         Long empresaId = partida.getObra().getEmpresa().getId();
 
+        // Una partida guardada antes de validar las medidas puede traer una en cero (o
+        // negativa): con separación 0 los montantes salían Infinity. Se rechaza antes de
+        // borrar la cubicación que ya tenía.
+        if (!(partida.getAnchoM() > 0) || !(partida.getAltoM() > 0) || !(partida.getSeparacionMontantes() > 0)) {
+            throw new IllegalStateException("La partida tiene medidas inválidas: el ancho, el alto y la separación "
+                    + "de montantes deben ser mayores que 0. Corrígelas antes de cubicar");
+        }
+
         itemCubicadoRepository.deleteByPartidaId(partidaId);
 
         List<ItemCubicado> resultado = new ArrayList<>();

@@ -15,7 +15,11 @@ public record SolicitudHerramientaResponse(
         Long herramientaId,
         String herramientaNombre,
         Long resueltoPorId,
-        String resueltoPorNombre) {
+        String resueltoPorNombre,
+        String descripcion,
+        LocalDateTime fechaRecepcion,
+        /** Nulo si se pidió sola, fuera de un pedido con QR. */
+        Long pedidoId) {
 
     public static SolicitudHerramientaResponse de(SolicitudHerramienta s) {
         // Ambos nulos mientras la solicitud siga pendiente.
@@ -32,6 +36,9 @@ public record SolicitudHerramientaResponse(
                 s.getHerramienta().getId(),
                 s.getHerramienta().getNombre(),
                 resuelta ? s.getResueltoPor().getId() : null,
-                resuelta ? s.getResueltoPor().getNombre() : null);
+                resuelta ? s.getResueltoPor().getNombre() : null,
+                s.getDescripcion(),
+                s.getFechaRecepcion(),
+                s.getPedido() == null ? null : s.getPedido().getId());
     }
 }

@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/formato.dart';
 import '../../core/network/errores.dart';
+import '../../core/network/idempotencia.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/api/dominio_api.dart';
+import '../../data/modelos/detalle_obra.dart';
 import '../../data/modelos/obra.dart';
 import '../../shared_widgets/campo_texto.dart';
 import '../../shared_widgets/estados.dart';
 import '../../shared_widgets/panel.dart';
-import '../../core/theme/app_theme.dart';
-import '../../data/modelos/usuario.dart';
+import '../../shared_widgets/presion.dart';
+import '../bodega/pantalla_bodega.dart';
 import '../obra/obra_activa.dart';
-import 'pantalla_usuarios.dart';
+import 'pantalla_detalle_obra.dart';
 
 /// Obras de la constructora. Crear y cerrar son exclusivas de ADMIN.
 class PantallaObras extends ConsumerWidget {
@@ -23,7 +27,11 @@ class PantallaObras extends ConsumerWidget {
 
     return Scaffold(
       body: RefreshIndicator(
-        onRefresh: () async => ref.refresh(todasLasObrasProvider.future),
+        onRefresh: () async {
+          ref.invalidate(detalleObraProvider);
+          ref.invalidate(todasLasObrasProvider);
+          await ref.read(todasLasObrasProvider.future);
+        },
         child: Contenido<List<Obra>>(
           valor: obras,
           alReintentar: () => ref.invalidate(todasLasObrasProvider),
@@ -50,7 +58,7 @@ class PantallaObras extends ConsumerWidget {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Etiqueta('Activas · ${activas.length}'),
+                Etiqueta('Activas (${activas.length})'),
                 const SizedBox(height: 8),
                 for (final o in activas) ...[
                   _FilaObra(obra: o),
@@ -58,7 +66,7 @@ class PantallaObras extends ConsumerWidget {
                 ],
                 if (cerradas.isNotEmpty) ...[
                   const SizedBox(height: 14),
-                  Etiqueta('Cerradas · ${cerradas.length}'),
+                  Etiqueta('Cerradas (${cerradas.length})'),
                   const SizedBox(height: 8),
                   for (final o in cerradas) ...[
                     _FilaObra(obra: o),
@@ -75,7 +83,6 @@ class PantallaObras extends ConsumerWidget {
         onPressed: () => _abrirFormulario(context),
         backgroundColor: AppColors.accentFill,
         foregroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         icon: const Icon(Icons.add),
         label: const Text('Nueva obra'),
       ),
@@ -87,156 +94,42 @@ class PantallaObras extends ConsumerWidget {
           .push(MaterialPageRoute(builder: (_) => const PantallaNuevaObra()));
 }
 
-class _FilaObra extends ConsumerStatefulWidget {
+/// Una obra en la lista: quién la dirige y, debajo, lo que tiene — gente,
+/// materiales con su cantidad y herramientas. Tocarla abre la ficha completa.
+///
+/// El resumen se pide por obra y llega después que la fila. Mientras tanto la
+/// fila ya muestra nombre, cliente y jefe, que vienen en la lista, en vez de
+/// esperar con un spinner lo que no hace falta para reconocerla.
+class _FilaObra extends ConsumerWidget {
   const _FilaObra({required this.obra});
 
   final Obra obra;
 
-  @override
-  ConsumerState<_FilaObra> createState() => _FilaObraState();
-}
-
-class _FilaObraState extends ConsumerState<_FilaObra> {
-  bool _enviando = false;
-
-  /// Solo un jefe de terreno o un admin puede dirigir una obra: el backend
-  /// rechaza cualquier otro rol, así que la lista se filtra acá en vez de
-  /// ofrecer opciones que van a fallar.
-  Future<void> _elegirJefe(
-    BuildContext context,
-    WidgetRef ref,
-    Obra obra,
-  ) async {
-    final candidatos = (ref.read(usuariosProvider).valueOrNull ?? const [])
-        .where((u) => u.rol == 'JEFE_TERRENO' || u.rol == 'ADMIN')
-        .toList();
-
-    if (candidatos.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No hay ningún usuario con rol Jefe de terreno o Administrador.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final elegido = await showModalBottomSheet<UsuarioEmpresa>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Jefe a cargo de ${obra.nombre}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-            ),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: candidatos.length,
-                separatorBuilder: (_, _) =>
-                    const Divider(height: 1, color: AppColors.border),
-                itemBuilder: (_, i) {
-                  final u = candidatos[i];
-                  return ListTile(
-                    leading: Iniciales(u.nombre, tamano: 38),
-                    title: Text(u.nombre),
-                    subtitle: Text(
-                      u.rut ?? 'sin RUT registrado',
-                      style: TextStyle(
-                        fontFamily: AppTheme.monoFamily,
-                        fontSize: 12,
-                        color: u.rut == null
-                            ? AppColors.warningDark
-                            : AppColors.secondary,
-                      ),
-                    ),
-                    onTap: () => Navigator.of(context).pop(u),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-
-    if (elegido == null) return;
-    try {
-      await ref.read(obrasApiProvider).asignarJefe(obra.id, elegido.id);
-      ref.invalidate(todasLasObrasProvider);
-      ref.invalidate(obrasActivasProvider);
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(mensajeDeError(e))));
-    }
-  }
-
-  /// Cerrar una obra congela su comparación entre presupuesto y consumo. El
-  /// backend rechaza con 409 si quedan herramientas fuera o alertas sin
-  /// resolver, así que el diálogo advierte, pero la última palabra es suya.
-  Future<void> _cerrar() async {
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-        title: Text('¿Cerrar ${widget.obra.nombre}?'),
-        content: const Text(
-          'Después de cerrarla no se puede registrar más movimiento contra '
-          'ella, y su desviación queda fijada. No se puede reabrir.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.destructiveDark,
-              minimumSize: const Size(0, 44),
-            ),
-            child: const Text('Cerrar obra'),
-          ),
-        ],
-      ),
-    );
-    if (confirmado != true) return;
-
-    setState(() => _enviando = true);
-    try {
-      await ref.read(obrasApiProvider).cerrar(widget.obra.id);
-      ref.invalidate(todasLasObrasProvider);
-      ref.invalidate(obrasActivasProvider);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(mensajeDeError(e))));
-    } finally {
-      if (mounted) setState(() => _enviando = false);
-    }
-  }
+  /// Cuántos materiales y grupos de herramientas se adelantan en la fila.
+  static const _vistaPrevia = 3;
 
   @override
-  Widget build(BuildContext context) {
-    final o = widget.obra;
-    return Panel(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final o = obra;
+    final detalle = ref.watch(detalleObraProvider(o.id));
+    final d = detalle.valueOrNull;
+
+    return PanelTocable(
+      semanticLabel:
+          '${o.nombre}, ${o.activa ? 'activa' : 'cerrada'}. ${o.cliente}. '
+          '${o.jefeIdentificacion}. '
+          '${d == null ? '' : '${d.resumen.cantidadTrabajadores} trabajadores, '
+                    '${d.materiales.length} materiales, '
+                    '${d.herramientas.length} herramientas. '}'
+          'Tocar para ver el detalle',
       color: o.activa ? AppColors.card : AppColors.background,
+      borderColor: o.activa ? AppColors.borderControl : AppColors.border,
+      borderIzquierdo: d != null && d.resumen.materialesCriticos > 0
+          ? AppColors.destructive
+          : null,
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => PantallaDetalleObra(obra: o))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -256,17 +149,16 @@ class _FilaObraState extends ConsumerState<_FilaObra> {
               o.activa
                   ? ChipEstado.exito('Activa')
                   : ChipEstado.neutro('Cerrada'),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right, color: AppColors.secondary),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
-            o.cliente,
+            '${o.cliente} · ${o.ubicacion}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            o.ubicacion,
-            style: const TextStyle(fontSize: 12, color: AppColors.secondary),
           ),
           const SizedBox(height: 10),
           Row(
@@ -291,36 +183,216 @@ class _FilaObraState extends ConsumerState<_FilaObra> {
                   ),
                 ),
               ),
-              if (o.activa)
-                TextButton(
-                  onPressed: () => _elegirJefe(context, ref, o),
-                  child: Text(o.tieneJefe ? 'Cambiar' : 'Asignar'),
-                ),
             ],
           ),
-          if (o.activa) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _enviando ? null : _cerrar,
-              icon: _enviando
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.lock_outline, size: 18),
-              label: Text(_enviando ? 'Cerrando…' : 'Cerrar obra'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(44),
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.zero,
-                ),
-                side: const BorderSide(color: AppColors.borderControl),
-                foregroundColor: AppColors.primary,
-              ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: AppColors.border),
+          const SizedBox(height: 12),
+          switch (detalle) {
+            AsyncData(:final value) => _VistaPrevia(detalle: value),
+            AsyncError() when d == null => Text(
+              'No se pudo cargar el resumen. Toca para reintentar en la ficha.',
+              style: AppTexto.cuerpoChico,
+            ),
+            _ when d != null => _VistaPrevia(detalle: d),
+            _ => const _VistaPreviaCargando(),
+          },
+        ],
+      ),
+    );
+  }
+}
+
+class _VistaPrevia extends StatelessWidget {
+  const _VistaPrevia({required this.detalle});
+
+  final DetalleObra detalle;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = detalle.resumen;
+    // Primero lo que falta y después el resto, como en la ficha.
+    final materiales = [
+      ...detalle.faltantes,
+      ...detalle.materiales.where((m) => m.estado == EstadoStock.ok),
+    ].take(_FilaObra._vistaPrevia).toList();
+    final grupos = detalle.herramientasAgrupadas
+        .take(_FilaObra._vistaPrevia)
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 16,
+          runSpacing: 6,
+          children: [
+            _Dato(
+              icono: Icons.groups_outlined,
+              texto: r.cantidadTrabajadores == 1
+                  ? '1 trabajador'
+                  : '${r.cantidadTrabajadores} trabajadores',
+            ),
+            _Dato(
+              icono: Icons.inventory_2_outlined,
+              texto: '${detalle.materiales.length} materiales',
+            ),
+            _Dato(
+              icono: Icons.handyman_outlined,
+              texto: '${detalle.herramientas.length} herramientas',
             ),
           ],
+        ),
+        if (r.materialesPorReponer > 0) ...[
+          const SizedBox(height: 10),
+          r.materialesCriticos > 0
+              ? ChipEstado.critico(
+                  r.materialesCriticos == 1
+                      ? '1 material bajo el mínimo'
+                      : '${r.materialesCriticos} materiales bajo el mínimo',
+                )
+              : ChipEstado.aviso(
+                  r.materialesBajos == 1
+                      ? '1 material por agotarse'
+                      : '${r.materialesBajos} materiales por agotarse',
+                ),
         ],
+        if (materiales.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('Materiales', style: AppTexto.rotulo),
+          const SizedBox(height: 4),
+          for (final m in materiales)
+            _LineaCantidad(
+              nombre: m.nombre,
+              cantidad: '${Formato.cantidad(m.stock)} ${unidadDe(m.categoria)}',
+              color: switch (m.estado) {
+                EstadoStock.critico => AppColors.destructiveDark,
+                EstadoStock.bajo => AppColors.warningDark,
+                EstadoStock.ok => AppColors.primary,
+              },
+            ),
+          if (detalle.materiales.length > materiales.length)
+            _Mas(detalle.materiales.length - materiales.length),
+        ],
+        if (grupos.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text('Herramientas', style: AppTexto.rotulo),
+          const SizedBox(height: 4),
+          for (final g in grupos)
+            _LineaCantidad(
+              nombre: g.nombre,
+              cantidad: '× ${g.cantidad}',
+              color: g.vencidas > 0
+                  ? AppColors.destructiveDark
+                  : AppColors.primary,
+            ),
+          if (detalle.herramientasAgrupadas.length > grupos.length)
+            _Mas(detalle.herramientasAgrupadas.length - grupos.length),
+        ],
+      ],
+    );
+  }
+}
+
+class _Dato extends StatelessWidget {
+  const _Dato({required this.icono, required this.texto});
+
+  final IconData icono;
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icono, size: 16, color: AppColors.secondary),
+        const SizedBox(width: 6),
+        Text(
+          texto,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+            color: AppColors.primary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LineaCantidad extends StatelessWidget {
+  const _LineaCantidad({
+    required this.nombre,
+    required this.cantidad,
+    required this.color,
+  });
+
+  final String nombre;
+  final String cantidad;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              nombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTexto.cuerpoChico.copyWith(color: AppColors.primary),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            cantidad,
+            style: TextStyle(
+              fontFeatures: AppTexto.tabulares,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Mas extends StatelessWidget {
+  const _Mas(this.cuantos);
+
+  final int cuantos;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 2),
+    child: Text('y $cuantos más', style: AppTexto.dato),
+  );
+}
+
+/// Siluetas del resumen mientras llega: reservan el alto para que la lista no
+/// salte cuando carga.
+class _VistaPreviaCargando extends StatelessWidget {
+  const _VistaPreviaCargando();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget barra(double ancho) => Container(
+      width: ancho,
+      height: 10,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: const BoxDecoration(
+        color: AppColors.sunken,
+        borderRadius: BorderRadius.all(Radius.circular(4)),
+      ),
+    );
+    return ExcludeSemantics(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [barra(220), barra(160), barra(190)],
       ),
     );
   }
@@ -340,6 +412,7 @@ class _PantallaNuevaObraState extends ConsumerState<PantallaNuevaObra> {
   final _formKey = GlobalKey<FormState>();
   bool _enviando = false;
   String? _error;
+  final _intento = IntentoIdempotente();
 
   @override
   void dispose() {
@@ -350,19 +423,24 @@ class _PantallaNuevaObraState extends ConsumerState<PantallaNuevaObra> {
   }
 
   Future<void> _guardar() async {
+    if (_enviando) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _enviando = true;
       _error = null;
     });
+    final nombre = _nombre.text.trim();
+    final cliente = _cliente.text.trim();
+    final ubicacion = _ubicacion.text.trim();
     try {
       await ref
           .read(obrasApiProvider)
           .crear(
-            nombre: _nombre.text.trim(),
-            cliente: _cliente.text.trim(),
-            ubicacion: _ubicacion.text.trim(),
+            nombre: nombre,
+            cliente: cliente,
+            ubicacion: ubicacion,
+            clave: _intento.clavePara([nombre, cliente, ubicacion]),
           );
       ref.invalidate(todasLasObrasProvider);
       ref.invalidate(obrasActivasProvider);
@@ -371,7 +449,7 @@ class _PantallaNuevaObraState extends ConsumerState<PantallaNuevaObra> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Obra creada')));
     } catch (e) {
-      setState(() => _error = mensajeDeError(e));
+      if (mounted) setState(() => _error = mensajeDeError(e));
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
@@ -428,9 +506,11 @@ class _PantallaNuevaObraState extends ConsumerState<PantallaNuevaObra> {
                 MensajeError(mensaje: _error!),
               ],
               const SizedBox(height: 22),
-              FilledButton(
-                onPressed: _enviando ? null : _guardar,
-                child: Text(_enviando ? 'Creando…' : 'Crear obra'),
+              BotonEnvio(
+                texto: 'Crear obra',
+                textoEnviando: 'Creando…',
+                enviando: _enviando,
+                alPresionar: _guardar,
               ),
             ],
           ),

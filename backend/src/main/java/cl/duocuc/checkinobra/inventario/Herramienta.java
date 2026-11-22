@@ -32,7 +32,7 @@ public class Herramienta implements PerteneceAEmpresa {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "codigo_qr", nullable = false, unique = true)
+    @Column(name = "codigo_qr", nullable = false) // único por empresa: V13
     private String codigoQr;
 
     @Column(nullable = false)

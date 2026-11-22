@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  * decide {@code rol}).
  *
  * <p>Mientras eso siga así, una constructora nueva se da de alta por migración
- * junto con su primer ADMIN, como hace {@code V2__seed_admin.sql}. El README lo
+ * junto con su primer ADMIN, como hacía {@code V2__seed_admin.sql}. El README lo
  * documenta en "Dar de alta una constructora".
  */
 @RestController

@@ -4,15 +4,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formato.dart';
 import '../../core/network/errores.dart';
+import '../../core/network/idempotencia.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_forma.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/api/dominio_api.dart';
 import '../../data/modelos/material.dart';
 import '../../shared_widgets/campo_texto.dart';
 import '../../shared_widgets/estados.dart';
+import '../../shared_widgets/opcion.dart';
 import '../../shared_widgets/panel.dart';
+import '../../shared_widgets/presion.dart';
 import '../bodega/bodega_providers.dart';
 import '../bodega/pantalla_bodega.dart';
+import '../bodega/pantalla_escaneo.dart';
+import 'aviso_faltantes.dart';
+import 'pantalla_importacion.dart';
 
 /// Categorías de `CategoriaMaterial`. El rubro es tabiquería y cielos, así que
 /// son estas cuatro y no un campo libre.
@@ -30,7 +37,11 @@ class PantallaMateriales extends ConsumerWidget {
 
     return Scaffold(
       body: RefreshIndicator(
-        onRefresh: () async => ref.refresh(catalogoProvider.future),
+        onRefresh: () async {
+          ref.invalidate(faltantesProvider);
+          ref.invalidate(catalogoProvider);
+          await ref.read(catalogoProvider.future);
+        },
         child: Contenido<List<MaterialObra>>(
           valor: catalogo,
           alReintentar: () => ref.invalidate(catalogoProvider),
@@ -42,11 +53,29 @@ class PantallaMateriales extends ConsumerWidget {
               detalle:
                   'Sin materiales no se puede cubicar ni mover bodega. '
                   'Empieza por los que más se usan en la obra.',
+              // Con el catálogo vacío, cargar la planilla que la constructora
+              // ya tiene en Excel es mucho más razonable que teclear treinta y
+              // cuatro materiales en un teléfono. Por eso la importación
+              // aparece acá y no escondida en otra pestaña.
               accion: Builder(
-                builder: (context) => FilledButton.icon(
-                  onPressed: () => _nuevo(context),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Agregar material'),
+                builder: (context) => Column(
+                  children: [
+                    FilledButton.icon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const PantallaImportacion(),
+                        ),
+                      ),
+                      icon: const Icon(Icons.upload_file),
+                      label: const Text('Importar desde Excel'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextButton.icon(
+                      onPressed: () => _nuevo(context),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Agregar uno a uno'),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -56,18 +85,30 @@ class PantallaMateriales extends ConsumerWidget {
             for (final m in lista) {
               porCategoria.putIfAbsent(m.categoria, () => []).add(m);
             }
+            // En cuántas obras falta cada material, para marcarlo en su fila.
+            final faltaEn = <int, int>{};
+            for (final f
+                in ref.watch(faltantesProvider).valueOrNull ?? const []) {
+              faltaEn[f.materialId] = (faltaEn[f.materialId] ?? 0) + 1;
+            }
             return ListView(
-              padding: const EdgeInsets.all(16),
+              padding: AppEspacio.pantalla,
               children: [
+                const AvisoFaltantes(),
                 for (final categoria in categorias)
                   if (porCategoria[categoria] case final materiales?) ...[
-                    Etiqueta('$categoria · ${materiales.length}'),
-                    const SizedBox(height: 8),
+                    Etiqueta(
+                      '${nombreDeCategoria(categoria)} (${materiales.length})',
+                    ),
+                    const SizedBox(height: AppEspacio.sm + 4),
                     for (final m in materiales) ...[
-                      _FilaMaterial(material: m),
-                      const SizedBox(height: 8),
+                      _FilaMaterial(
+                        material: m,
+                        faltaEnObras: faltaEn[m.id] ?? 0,
+                      ),
+                      const SizedBox(height: AppEspacio.sm),
                     ],
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppEspacio.md),
                   ],
                 const SizedBox(height: 70),
               ],
@@ -79,7 +120,6 @@ class PantallaMateriales extends ConsumerWidget {
         onPressed: () => _nuevo(context),
         backgroundColor: AppColors.accentFill,
         foregroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         icon: const Icon(Icons.add),
         label: const Text('Nuevo material'),
       ),
@@ -91,30 +131,37 @@ class PantallaMateriales extends ConsumerWidget {
 }
 
 class _FilaMaterial extends ConsumerWidget {
-  const _FilaMaterial({required this.material});
+  const _FilaMaterial({required this.material, required this.faltaEnObras});
 
   final MaterialObra material;
 
+  /// En cuántas obras activas se está agotando. Cero si en ninguna.
+  final int faltaEnObras;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final unidad = unidadDe(material.categoria);
+    final m = material;
+    final unidad = unidadDe(m.categoria);
     return PanelTocable(
       semanticLabel:
-          '${material.nombre}, ${Formato.pesos(material.precioUnitario)} '
-          'por $unidad. Tocar para editar precio y merma',
+          '${m.nombre}, ${_costoHablado(m, unidad)}'
+          '${faltaEnObras > 0 ? '. Se está agotando en $faltaEnObras obras' : ''}'
+          '. Tocar para editar precio y merma',
+      borderIzquierdo: faltaEnObras > 0 ? AppColors.warning : null,
       onTap: () => showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
-        builder: (_) => _HojaEdicion(material: material),
+        builder: (_) => _HojaEdicion(material: m),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  material.nombre,
+                  m.nombre,
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -123,28 +170,81 @@ class _FilaMaterial extends ConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${material.sku} · mín. ${Formato.cantidad(material.stockMinimo)} $unidad',
+                  '${m.sku} · mín. ${Formato.cantidad(m.stockMinimo)} $unidad',
                   style: const TextStyle(
                     fontFamily: AppTheme.monoFamily,
-                    fontSize: 11.5,
+                    fontSize: 12.5,
                     color: AppColors.secondary,
                   ),
                 ),
+                if (m.tieneCostoReal) ...[
+                  const SizedBox(height: AppEspacio.xs),
+                  _LineaCompra(material: m),
+                ],
+                if (faltaEnObras > 0) ...[
+                  const SizedBox(height: AppEspacio.sm),
+                  ChipEstado.aviso(
+                    faltaEnObras == 1
+                        ? 'Se agota en 1 obra'
+                        : 'Se agota en $faltaEnObras obras',
+                  ),
+                ],
               ],
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            Formato.pesos(material.precioUnitario),
-            style: const TextStyle(
-              fontFamily: AppTheme.monoFamily,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.primary,
-            ),
-          ),
+          CostoMaterial(material: m, unidad: unidad),
         ],
       ),
+    );
+  }
+}
+
+String _costoHablado(MaterialObra m, String unidad) => m.tieneCostoReal
+    ? 'costó ${Formato.pesos(m.ultimoCostoUnitario!)} por $unidad en la '
+          'última compra; precio de catálogo ${Formato.pesos(m.precioUnitario)}'
+    : 'precio de catálogo ${Formato.pesos(m.precioUnitario)} por $unidad, '
+          'sin compras registradas con costo';
+
+/// El precio de un material dicho con su origen.
+///
+/// "$5.980" solo no dice nada: puede ser lo que se estimó al cargar el
+/// catálogo o lo que efectivamente se pagó la semana pasada, y en una obra
+/// esas dos cifras se separan. Por eso la cifra grande es la del costo real
+/// cuando existe, con el rótulo "costo" y la fecha de la compra, y el precio
+/// de catálogo queda debajo para comparar. Sin compras con costo, se dice que
+/// es de catálogo.
+class CostoMaterial extends StatelessWidget {
+  const CostoMaterial({
+    super.key,
+    required this.material,
+    required this.unidad,
+  });
+
+  final MaterialObra material;
+  final String unidad;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = material;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          Formato.pesos(m.costoVigente),
+          style: const TextStyle(
+            fontFeatures: AppTexto.tabulares,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          m.tieneCostoReal ? 'costo / $unidad' : 'catálogo / $unidad',
+          style: AppTexto.dato.copyWith(fontSize: 11.5),
+        ),
+      ],
     );
   }
 }
@@ -177,6 +277,7 @@ class _HojaEdicionState extends ConsumerState<_HojaEdicion> {
   }
 
   Future<void> _guardar() async {
+    if (_enviando) return;
     setState(() {
       _enviando = true;
       _error = null;
@@ -189,7 +290,7 @@ class _HojaEdicionState extends ConsumerState<_HojaEdicion> {
         await api.actualizarPrecio(widget.material.id, precio);
       }
 
-      final merma = double.tryParse(_merma.text.replaceAll(',', '.'));
+      final merma = Formato.numero(_merma.text);
       if (merma != null) {
         await api.definirMerma(widget.material.id, merma);
       }
@@ -200,7 +301,7 @@ class _HojaEdicionState extends ConsumerState<_HojaEdicion> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Material actualizado')));
     } catch (e) {
-      setState(() => _error = mensajeDeError(e));
+      if (mounted) setState(() => _error = mensajeDeError(e));
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
@@ -227,9 +328,11 @@ class _HojaEdicionState extends ConsumerState<_HojaEdicion> {
                   color: AppColors.primary,
                 ),
               ),
+              const SizedBox(height: 14),
+              _ResumenCosto(material: widget.material),
               const SizedBox(height: 18),
               CampoConEtiqueta(
-                etiqueta: 'Precio unitario',
+                etiqueta: 'Precio de catálogo',
                 campo: CampoTexto(
                   controlador: _precio,
                   hint: '5980',
@@ -240,7 +343,8 @@ class _HojaEdicionState extends ConsumerState<_HojaEdicion> {
                   habilitado: !_enviando,
                 ),
                 ayuda:
-                    'Alimenta el presupuesto. Cambiarlo no altera los '
+                    'Lo que se estima pagar: alimenta el presupuesto. El costo '
+                    'real sale de las recepciones. Cambiarlo no altera los '
                     'presupuestos ya congelados.',
               ),
               const SizedBox(height: 16),
@@ -266,9 +370,11 @@ class _HojaEdicionState extends ConsumerState<_HojaEdicion> {
                 MensajeError(mensaje: _error!),
               ],
               const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _enviando ? null : _guardar,
-                child: Text(_enviando ? 'Guardando…' : 'Guardar cambios'),
+              BotonEnvio(
+                texto: 'Guardar cambios',
+                textoEnviando: 'Guardando…',
+                enviando: _enviando,
+                alPresionar: _guardar,
               ),
               const SizedBox(height: 8),
             ],
@@ -289,6 +395,7 @@ class PantallaNuevoMaterial extends ConsumerStatefulWidget {
 
 class _PantallaNuevoMaterialState extends ConsumerState<PantallaNuevoMaterial> {
   final _sku = TextEditingController();
+  final _codigoBarra = TextEditingController();
   final _nombre = TextEditingController();
   final _precio = TextEditingController();
   final _minimo = TextEditingController();
@@ -296,32 +403,60 @@ class _PantallaNuevoMaterialState extends ConsumerState<PantallaNuevoMaterial> {
   String _categoria = categorias.first;
   bool _enviando = false;
   String? _error;
+  final _intento = IntentoIdempotente();
 
   @override
   void dispose() {
     _sku.dispose();
+    _codigoBarra.dispose();
     _nombre.dispose();
     _precio.dispose();
     _minimo.dispose();
     super.dispose();
   }
 
+  Future<void> _leerCodigo() async {
+    final codigo = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const PantallaCapturaCodigo()),
+    );
+    if (codigo != null && mounted) {
+      setState(() => _codigoBarra.text = codigo);
+    }
+  }
+
   Future<void> _guardar() async {
+    if (_enviando) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _enviando = true;
       _error = null;
     });
+    final sku = _sku.text.trim().toUpperCase();
+    final nombre = _nombre.text.trim();
+    final precio = double.parse(_precio.text.replaceAll('.', ''));
+    final minimo = Formato.numero(_minimo.text)!;
+    final codigo = _codigoBarra.text.trim().isEmpty
+        ? null
+        : _codigoBarra.text.trim();
     try {
       await ref
           .read(materialesApiProvider)
           .crear(
-            sku: _sku.text.trim().toUpperCase(),
-            nombre: _nombre.text.trim(),
+            sku: sku,
+            nombre: nombre,
             categoria: _categoria,
-            precioUnitario: double.parse(_precio.text.replaceAll('.', '')),
-            stockMinimo: double.parse(_minimo.text.replaceAll(',', '.')),
+            precioUnitario: precio,
+            stockMinimo: minimo,
+            codigoBarra: codigo,
+            clave: _intento.clavePara([
+              sku,
+              nombre,
+              _categoria,
+              precio,
+              minimo,
+              codigo,
+            ]),
           );
       ref.invalidate(catalogoProvider);
       if (!mounted) return;
@@ -329,7 +464,7 @@ class _PantallaNuevoMaterialState extends ConsumerState<PantallaNuevoMaterial> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Material agregado')));
     } catch (e) {
-      setState(() => _error = mensajeDeError(e));
+      if (mounted) setState(() => _error = mensajeDeError(e));
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
@@ -359,6 +494,28 @@ class _PantallaNuevoMaterialState extends ConsumerState<PantallaNuevoMaterial> {
                       : null,
                 ),
                 ayuda: 'Único en la empresa. Es lo que viene en la guía de despacho.',
+              ),
+              const SizedBox(height: 16),
+              CampoConEtiqueta(
+                etiqueta: 'Código de barras (opcional)',
+                campo: CampoTexto(
+                  controlador: _codigoBarra,
+                  hint: '7801234567890',
+                  icono: Icons.barcode_reader,
+                  mono: true,
+                  teclado: TextInputType.number,
+                  habilitado: !_enviando,
+                  sufijo: IconButton(
+                    tooltip: 'Leerlo con la cámara',
+                    icon: const Icon(Icons.qr_code_scanner, size: 20),
+                    color: AppColors.accentFill,
+                    onPressed: _enviando ? null : _leerCodigo,
+                  ),
+                ),
+                ayuda:
+                    'El que viene impreso en el envase. Con él, el bodeguero '
+                    'encuentra este material escaneándolo en vez de buscarlo '
+                    'en la lista.',
               ),
               const SizedBox(height: 16),
               CampoConEtiqueta(
@@ -419,8 +576,7 @@ class _PantallaNuevoMaterialState extends ConsumerState<PantallaNuevoMaterial> {
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                   ],
                   habilitado: !_enviando,
-                  validador: (v) =>
-                      double.tryParse((v ?? '').replaceAll(',', '.')) == null
+                  validador: (v) => Formato.numero(v ?? '') == null
                       ? 'Escribe el mínimo'
                       : null,
                 ),
@@ -433,9 +589,11 @@ class _PantallaNuevoMaterialState extends ConsumerState<PantallaNuevoMaterial> {
                 MensajeError(mensaje: _error!),
               ],
               const SizedBox(height: 22),
-              FilledButton(
-                onPressed: _enviando ? null : _guardar,
-                child: Text(_enviando ? 'Guardando…' : 'Agregar al catálogo'),
+              BotonEnvio(
+                texto: 'Agregar al catálogo',
+                textoEnviando: 'Guardando…',
+                enviando: _enviando,
+                alPresionar: _guardar,
               ),
             ],
           ),
@@ -458,35 +616,141 @@ class _ChipCategoria extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: activa,
-      label: categoria,
-      excludeSemantics: true,
-      child: Material(
-        color: activa ? AppColors.primary : AppColors.card,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-            decoration: BoxDecoration(
-              border: Border.fromBorderSide(
-                BorderSide(
-                  color: activa ? AppColors.primary : AppColors.borderControl,
-                ),
+    return Opcion(
+      texto: nombreDeCategoria(categoria),
+      elegida: activa,
+      alTocar: onTap,
+    );
+  }
+}
+
+/// "Compra hoy 10:15 · ▲ 10 % sobre catálogo": cuándo se pagó el costo que
+/// se muestra y cuánto se alejó de lo estimado. Va bajo el nombre, a todo el
+/// ancho, y no junto a la cifra: ahí angostaba el nombre hasta partirlo.
+class _LineaCompra extends StatelessWidget {
+  const _LineaCompra({required this.material});
+
+  final MaterialObra material;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = material;
+    final variacion = m.variacionCosto;
+    final fecha = m.fechaUltimoCosto;
+    return Text.rich(
+      TextSpan(
+        style: AppTexto.dato.copyWith(fontSize: 11.5),
+        children: [
+          TextSpan(
+            text: fecha == null
+                ? 'Última compra'
+                : 'Compra ${Formato.relativa(fecha)}',
+          ),
+          if (variacion != null && variacion.abs() >= 0.005)
+            TextSpan(
+              text:
+                  ' · ${variacion > 0 ? '▲' : '▼'} '
+                  '${(variacion.abs() * 100).toStringAsFixed(0)} % '
+                  '${variacion > 0 ? 'sobre' : 'bajo'} catálogo '
+                  '(${Formato.pesos(m.precioUnitario)})',
+              style: TextStyle(
+                color: variacion > 0
+                    ? AppColors.destructiveDark
+                    : AppColors.successDark,
               ),
             ),
-            child: Text(
-              categoria,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: activa ? Colors.white : AppColors.textMuted,
-              ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Lo que costó el material en las compras registradas, dentro de la hoja de
+/// edición: es la referencia para decidir si el precio de catálogo quedó
+/// corto.
+class _ResumenCosto extends StatelessWidget {
+  const _ResumenCosto({required this.material});
+
+  final MaterialObra material;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = material;
+    final unidad = unidadDe(m.categoria);
+    if (!m.tieneCostoReal) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: const BoxDecoration(
+          color: AppColors.sunken,
+          borderRadius: AppForma.borde,
+        ),
+        child: Text(
+          'Todavía no hay recepciones con costo. Al recibir material en '
+          'bodega, anota lo que se pagó por $unidad y aparecerá acá.',
+          style: AppTexto.cuerpoChico,
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: const BoxDecoration(
+        color: AppColors.sunken,
+        borderRadius: AppForma.borde,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _Cifra(
+              rotulo: 'Última compra',
+              valor: Formato.pesos(m.ultimoCostoUnitario!),
+              detalle: m.fechaUltimoCosto == null
+                  ? 'por $unidad'
+                  : 'por $unidad · ${Formato.relativa(m.fechaUltimoCosto!)}',
             ),
           ),
-        ),
+          if (m.costoPromedio != null)
+            Expanded(
+              child: _Cifra(
+                rotulo: 'Costo promedio',
+                valor: Formato.pesos(m.costoPromedio!),
+                detalle: 'ponderado por cantidad',
+              ),
+            ),
+        ],
       ),
+    );
+  }
+}
+
+class _Cifra extends StatelessWidget {
+  const _Cifra({
+    required this.rotulo,
+    required this.valor,
+    required this.detalle,
+  });
+
+  final String rotulo;
+  final String valor;
+  final String detalle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(rotulo, style: AppTexto.rotulo),
+        const SizedBox(height: 2),
+        Text(
+          valor,
+          style: const TextStyle(
+            fontFeatures: AppTexto.tabulares,
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: AppColors.primary,
+          ),
+        ),
+        Text(detalle, style: AppTexto.dato.copyWith(fontSize: 11.5)),
+      ],
     );
   }
 }

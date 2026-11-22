@@ -1,5 +1,9 @@
 package cl.duocuc.checkinobra.control;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +29,7 @@ public class AlertaController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'JEFE_TERRENO', 'BODEGUERO')")
     public List<AlertaResponse> listar(
             @RequestParam Long obraId, @RequestParam(required = false, defaultValue = "false") boolean soloSinResolver) {
         List<Alerta> alertas =
@@ -54,10 +59,12 @@ public class AlertaController {
     /** Cerrar turno de bodega es exclusivo de BODEGUERO, según la matriz de permisos. */
     @PostMapping("/cierre-turno")
     @PreAuthorize("hasAnyRole('ADMIN', 'BODEGUERO')")
-    public AlertaResponse generarCierreTurno(@RequestBody CierreTurnoRequest req) {
+    public AlertaResponse generarCierreTurno(@Valid @RequestBody CierreTurnoRequest req) {
         return AlertaResponse.de(alertaService.generarCierreTurno(req.obraId(), req.mensaje()));
     }
 
-    public record CierreTurnoRequest(Long obraId, String mensaje) {
+    public record CierreTurnoRequest(
+            @NotNull(message = "Falta la obra") Long obraId,
+            @NotBlank(message = "El mensaje es obligatorio") @Size(max = 500, message = "El mensaje admite hasta 500 caracteres") String mensaje) {
     }
 }

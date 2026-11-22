@@ -45,8 +45,11 @@ public class AlertaService {
 
     /** Revisa los préstamos abiertos de la obra y genera NO_DEVUELTA para los vencidos que aún no tienen alerta. */
     public List<Alerta> detectarNoDevueltas(Long obraId) {
-        obraService.obtener(obraId);
-        Obra obra = obraService.obtener(obraId);
+        // obtenerBloqueada() filtra por empresa (404 si la obra es ajena) y
+        // además serializa las detecciones: la app las dispara cada vez que se
+        // abre la pantalla de alertas, y dos a la vez leían la misma lista de
+        // "existentes" y creaban la misma alerta dos veces.
+        Obra obra = obraService.obtenerBloqueada(obraId);
         List<PrestamoHerramienta> abiertos = prestamoHerramientaRepository.findByObraIdAndFechaDevolRealIsNull(obraId);
         List<Alerta> existentes = alertaRepository.findByObraIdAndResueltoFalse(obraId);
 
@@ -67,8 +70,11 @@ public class AlertaService {
 
     /** Revisa el catálogo de la obra y genera STOCK_CRITICO para lo que quedó bajo el mínimo. */
     public List<Alerta> detectarStockCritico(Long obraId) {
-        obraService.obtener(obraId);
-        Obra obra = obraService.obtener(obraId);
+        // obtenerBloqueada() filtra por empresa (404 si la obra es ajena) y
+        // además serializa las detecciones: la app las dispara cada vez que se
+        // abre la pantalla de alertas, y dos a la vez leían la misma lista de
+        // "existentes" y creaban la misma alerta dos veces.
+        Obra obra = obraService.obtenerBloqueada(obraId);
         List<Material> materiales = materialService.listarPorEmpresa(obra.getEmpresa().getId());
         List<Alerta> existentes = alertaRepository.findByObraIdAndResueltoFalse(obraId);
 

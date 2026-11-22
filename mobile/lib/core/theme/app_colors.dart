@@ -17,8 +17,21 @@ abstract final class AppColors {
   /// Relleno de botón primario — versión con contraste suficiente.
   static const accentFill = Color(0xFFC2410C);
 
+  /// Lienzo de toda la app. Las tarjetas blancas se separan de él por el
+  /// borde fino, no por sombra. Se evaluó bajarlo a slate-100 para que las
+  /// tarjetas resaltaran más, pero ahí `secondary` cae a 4.34:1 y las ayudas
+  /// de los formularios, que van sobre el lienzo, dejan de pasar el 4.5:1.
   static const background = Color(0xFFF8FAFC);
   static const card = Color(0xFFFFFFFF);
+
+  /// Superficie hundida dentro de una tarjeta: el saldo neutro, una fila
+  /// agrupada, el fondo de un chip neutro. Es el "Fog" de la referencia,
+  /// llevado a la familia pizarra del sistema.
+  static const sunken = Color(0xFFF1F5F9);
+
+  /// Tinte del acento: pestaña activa, fila elegida. El `accentFill` mide
+  /// 4.88:1 encima, así que un texto naranjo sobre este fondo se lee.
+  static const accentTint = Color(0xFFFFF7ED);
 
   /// Separador decorativo entre superficies. Mide 1.2:1 y con eso basta:
   /// no identifica ningún control, solo agrupa.
@@ -41,6 +54,10 @@ abstract final class AppColors {
   static const warningDark = Color(0xFFB45309);
   static const warningTint = Color(0xFFFFFBEB);
 
+  /// Texto largo sobre `warningTint`: un párrafo de advertencia pide más
+  /// contraste que un chip (8.9:1 contra 4.8:1 de `warningDark`).
+  static const warningInk = Color(0xFF92400E);
+
   static const destructive = Color(0xFFDC2626);
   static const destructiveDark = Color(0xFFB91C1C);
   static const destructiveTint = Color(0xFFFEF2F2);
@@ -57,7 +74,20 @@ abstract final class AppColors {
   /// quedaba en 4:1 y no pasaba el 4.5:1 del propio design system.
   static const textOnDark = Color(0xFFCBD5E1);
 
-  /// Panel oscuro sobre el encabezado, y su borde.
+  /// Marco oscuro. Se reserva para dos lugares: el encabezado del acceso y el
+  /// panel del turno en Inicio. Usarlo en cualquier otra parte le quitaría la
+  /// función de marco y lo volvería una tarjeta más.
   static const surfaceDark = Color(0xFF1E293B);
-  static const borderOnDark = Color(0xFF64748B);
+  static const borderOnDark = Color(0xFF334155);
+
+  /// Texto terciario sobre el marco oscuro: rótulos de las cifras (5.7:1).
+  static const textOnDarkMuted = Color(0xFF94A3B8);
+
+  /// Semáforo sobre el marco oscuro: los pasos oscuros de siempre ahí no
+  /// llegan al 3:1 de un número grande; estos pasan el 4.5:1.
+  static const destructiveOnDark = Color(0xFFF87171);
+  static const warningOnDark = Color(0xFFFBBF24);
+
+  /// El acento sobre el marco oscuro. `accent` ahí mide 4.1:1; este, 6.5:1.
+  static const accentOnDark = Color(0xFFFB923C);
 }

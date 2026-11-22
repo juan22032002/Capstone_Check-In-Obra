@@ -1,0 +1,13 @@
+sku;nombre;categoria;precio_unitario;stock_minimo
+VOL-ST-10;Placa yeso-cartón estándar 10 mm 1200x2400;VOLCANITA;6500;20
+VOL-ST-12;Placa yeso-cartón estándar 12,5 mm 1200x2400;VOLCANITA;7500;20
+VOL-RH-12;Placa yeso-cartón resistente a la humedad 12,5 mm;VOLCANITA;9500;10
+VOL-RF-15;Placa yeso-cartón resistente al fuego 15 mm;VOLCANITA;11500;10
+MET-MON-60;Montante 60x38x0,5 mm 2,44 m;METALCOM;2800;100
+MET-CAN-62;Canal 62x20x0,5 mm 2,44 m;METALCOM;2300;100
+MET-MON-90;Montante 90x38x0,5 mm 2,44 m;METALCOM;3600;60
+MET-CAN-92;Canal 92x30x0,5 mm 2,44 m;METALCOM;3000;60
+FIJ-TOR-6X1;Tornillo punta fina 6x1 pulgada (caja 1000);FIJACION;8500;5
+FIJ-TOR-6X1-5;Tornillo punta fina 6x1 1/2 pulgada (caja 1000);FIJACION;9500;5
+FIJ-TOR-PA;Tornillo punta aguda 8x1/2 pulgada (caja 1000);FIJACION;7800;5
+OSB-11;Placa OSB 11,1 mm 1220x2440;OSB;14500;10

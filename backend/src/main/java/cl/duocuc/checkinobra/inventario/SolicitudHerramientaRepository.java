@@ -8,6 +8,9 @@ import java.util.List;
 
 public interface SolicitudHerramientaRepository extends JpaRepository<SolicitudHerramienta, Long> {
     List<SolicitudHerramienta> findByTrabajadorId(Long trabajadorId);
+    List<SolicitudHerramienta> findByTrabajadorIdOrderByFechaSolicitudDescIdDesc(Long trabajadorId);
+    boolean existsByTrabajadorIdAndHerramientaIdAndEstado(
+            Long trabajadorId, Long herramientaId, EstadoSolicitud estado);
     List<SolicitudHerramienta> findByEstado(EstadoSolicitud estado);
 
     @Query("select s from SolicitudHerramienta s where s.trabajador.cuadrilla.obra.id = :obraId")

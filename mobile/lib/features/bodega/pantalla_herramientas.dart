@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formato.dart';
 import '../../core/network/errores.dart';
+import '../../data/api/auth_api.dart';
+import '../../core/network/idempotencia.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/api/dominio_api.dart';
@@ -10,6 +13,7 @@ import '../../data/modelos/herramienta.dart';
 import '../../shared_widgets/campo_texto.dart';
 import '../../shared_widgets/estados.dart';
 import '../../shared_widgets/panel.dart';
+import '../admin/pantalla_importacion.dart';
 import 'bodega_providers.dart';
 import 'pantalla_prestamo.dart';
 
@@ -55,6 +59,22 @@ class _PantallaHerramientasState extends ConsumerState<PantallaHerramientas> {
             ).push(MaterialPageRoute(builder: (_) => const PantallaPrestamo())),
             icon: const Icon(Icons.add),
             label: const Text('Prestar herramienta'),
+          ),
+          const SizedBox(height: 10),
+          // Las herramientas las etiqueta y las da de alta la propia bodega
+          // cuando llegan: veinte taladros nuevos son una planilla, no veinte
+          // formularios.
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const PantallaImportacion(
+                  inicial: CatalogoImportable.herramientas,
+                  soloEseCatalogo: true,
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.upload_file, size: 20),
+            label: const Text('Importar herramientas desde Excel'),
           ),
           const SizedBox(height: 20),
           const Etiqueta('Fuera de bodega'),
@@ -161,8 +181,10 @@ class FilaPrestamo extends ConsumerStatefulWidget {
 
 class _FilaPrestamoState extends ConsumerState<FilaPrestamo> {
   bool _enviando = false;
+  final _intento = IntentoIdempotente();
 
   Future<void> _recibir(String estado) async {
+    if (_enviando) return;
     setState(() => _enviando = true);
     try {
       await ref
@@ -170,10 +192,12 @@ class _FilaPrestamoState extends ConsumerState<FilaPrestamo> {
           .registrarDevolucion(
             widget.prestamo.id,
             nuevoEstadoHerramienta: estado,
+            clave: _intento.clavePara([widget.prestamo.id, estado]),
           );
       recargarBodega(ref);
       ref.invalidate(herramientasProvider);
       if (!mounted) return;
+      HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -183,6 +207,12 @@ class _FilaPrestamoState extends ConsumerState<FilaPrestamo> {
       );
     } catch (e) {
       if (!mounted) return;
+      // Ya devuelta: otro bodeguero la recibió, o el reintento llegó después
+      // de un éxito cuya respuesta se perdió. Lo que falta es refrescar.
+      if (e is ApiException && e.yaEstabaHecho) {
+        recargarBodega(ref);
+        ref.invalidate(herramientasProvider);
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(mensajeDeError(e))));
     } finally {
@@ -289,9 +319,6 @@ class _FilaPrestamoState extends ConsumerState<FilaPrestamo> {
             label: Text(_enviando ? 'Registrando…' : 'Registrar devolución'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(44),
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.zero,
-              ),
               side: const BorderSide(color: AppColors.borderControl),
               foregroundColor: AppColors.primary,
             ),
@@ -345,7 +372,7 @@ class _FilaHerramienta extends StatelessWidget {
                 '${Formato.pesos(herramienta.valorReposicion)}',
                 style: const TextStyle(
                   fontFamily: AppTheme.monoFamily,
-                  fontSize: 11.5,
+                  fontSize: 12.5,
                   color: AppColors.secondary,
                 ),
               ),

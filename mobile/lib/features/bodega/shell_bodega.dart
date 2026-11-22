@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_theme.dart';
+import '../../shared_widgets/barra_pestanas.dart';
 import '../../shared_widgets/panel.dart';
 import '../auth/sesion_controller.dart';
 import '../obra/obra_activa.dart';
@@ -9,6 +11,7 @@ import '../obra/pantalla_elegir_obra.dart';
 import 'bodega_providers.dart';
 import 'pantalla_alertas.dart';
 import 'pantalla_bodega.dart';
+import 'pantalla_escaneo.dart';
 import 'pantalla_herramientas.dart';
 import 'pantalla_inicio_bodega.dart';
 
@@ -53,6 +56,18 @@ class _ShellBodegaState extends ConsumerState<ShellBodega> {
         automaticallyImplyLeading: widget.comoAdmin,
         title: _TituloObra(comoAdmin: widget.comoAdmin),
         actions: [
+          // El escaneo de credencial está en el encabezado y no solo en el
+          // inicio: es la acción que se dispara con el trabajador enfrente, y
+          // puede pasar estando en cualquier pestaña.
+          IconButton(
+            tooltip: 'Escanear la credencial o el pedido de un trabajador',
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const PantallaEscaneoCredencial(),
+              ),
+            ),
+          ),
           if (!widget.comoAdmin)
             IconButton(
               tooltip: 'Cerrar sesión',
@@ -73,11 +88,9 @@ class _ShellBodegaState extends ConsumerState<ShellBodega> {
           ],
         ),
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: BarraDePestanas(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
-        backgroundColor: AppColors.card,
-        indicatorColor: AppColors.warningTint,
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -147,19 +160,14 @@ class _TituloObra extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    comoAdmin ? 'BODEGA · VISTA ADMIN' : 'OBRA',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1.2,
-                      color: AppColors.textOnDark,
-                    ),
+                    comoAdmin ? 'Bodega, vista de administrador' : 'Obra',
+                    style: AppTexto.dato.copyWith(color: AppColors.secondary),
                   ),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 4),
                   const Icon(
                     Icons.unfold_more,
-                    size: 13,
-                    color: AppColors.textOnDark,
+                    size: 14,
+                    color: AppColors.secondary,
                   ),
                 ],
               ),
@@ -167,10 +175,7 @@ class _TituloObra extends ConsumerWidget {
                 obra?.nombre ?? 'Sin obra',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: AppTexto.titulo.copyWith(fontSize: 19),
               ),
             ],
           ),
